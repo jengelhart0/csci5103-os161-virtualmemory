@@ -1,3 +1,6 @@
+# OS161
+defs.mk
+
 # Object files
 *.o
 *.ko
