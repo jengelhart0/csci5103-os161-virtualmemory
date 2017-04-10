@@ -1,0 +1,13 @@
+Include a file Design.txt (plain text) or Design.pdf in the /src/design/ directory. This file should
+concisely and clearly describe the design decisions you have made. You also need to describe
+how to interpret the result of any additional tests that you add
+
+Design Decisions: 
+
+- Implement a coremap for physical memory allocator
+- Handle TLB faults correctly
+- Add paging to your operating system 
+
+Added Tests:
+
+- Test & Results...
