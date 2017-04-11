@@ -3,6 +3,7 @@
 OS161 project for Operating Systems class  
 
 https://ay16.moodle.umn.edu/pluginfile.php/1883744/mod_resource/content/2/PA0.pdf  
+https://ay16.moodle.umn.edu/pluginfile.php/2095403/mod_resource/content/1/PA3.pdf
 
 ## 2.4 Congure, Build, and Run OS/161   
 A detailed explanation on how to congure, build, and run the OS can be found in this link:  http://os161.eecs.harvard.edu/resources/building.html.
