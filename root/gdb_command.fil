@@ -1,0 +1,4 @@
+directory /home/helge117/csci5103/os161/src/kern/compile/DUMBVM/
+target remote unix:.sockets/gdb
+source break.fil
+echo loaded & ready to go\n
