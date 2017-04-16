@@ -37,7 +37,7 @@
 
 #define PAGE_SIZE  4096         /* size of VM page */
 #define PAGE_FRAME 0xfffff000   /* mask for getting page number from addr */
-
+#define PAGE_TABLE_ENTRIES 1024 /* number of page table entries per VM page */
 /*
  * MIPS-I hardwired memory layout:
  *    0xc0000000 - 0xffffffff   kseg2 (kernel, tlb-mapped)

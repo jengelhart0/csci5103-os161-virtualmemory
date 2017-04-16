@@ -50,9 +50,18 @@ as_create(void)
 		return NULL;
 	}
 
-	/*
-	 * Initialize as needed.
-	 */
+	 // Set the stack (grows up) to be -1
+	 as->stackDirIdx = -1;
+	 as->stackTblIdx = -1;
+
+	 // Set the heap (grows down) to be PAGE_TABLE_ENTRIES
+	 as->heapDirIdx = PAGE_TABLE_ENTRIES;
+	 as->heapTblIdx = PAGE_TABLE_ENTRIES;
+
+	 // set all pageTable pointers to -1
+	 as->pgDirectoryPtr = (vaddr_t[PAGE_TABLE_ENTRIES])kmalloc(PAGE_SIZE);
+	 for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
+	 	as->pgDirectoryPtr[dirIdx] = -1;
 
 	return as;
 }
@@ -67,11 +76,13 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
-	/*
-	 * Write this.
-	 */
+		// what is best a reference to the pointer? or a copy of the array?
+	 newas->pgDirectoryPtr = old->pgDirectoryPtr;
 
-	(void)old;
+	 newas->stackDirIdx = old->stackDirIdx;
+	 newas->stackTblIdx = old->stackTblIdx;
+	 newas->heapDirIdx = old->heapDirIdx;
+	 newas->heapTblIdx = old->heapTblIdx;
 
 	*ret = newas;
 	return 0;
@@ -80,10 +91,36 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 void
 as_destroy(struct addrspace *as)
 {
-	/*
-	 * Clean up as needed.
-	 */
+	// BEWARE -- TODO -- handle case where stack & heap share 1 page
 
+	// TODO -- seems like these loops should be simpler.
+	// Maybe just loop through all possible entries and skip -1 values?
+
+	// Release stack tables (& pages?)
+	for (int stackTblPages = as->stackDirIdx; stackTblPages > -1; stackTblPages--)
+	{
+		struct pageTableEntry[PAGE_TABLE_ENTRIES] thisPage = as->pgDirectoryPtr[stackTblPages];
+		for (int stackPages = as->stackTblIdx; stackPages > -1; stackPages--)
+		{
+			thisPage[stackPages].sharedProcessCount--;
+			// TODO if this is 0 we need to let coremap know nothing is using this memory
+		}
+
+		// free this page of the page table and reset the inner counter for the next
+		kfree(as->pgDirectoryPtr[stackTblPages]);
+		as->stackTblIdx = PAGE_TABLE_ENTRIES - 1;
+	}
+
+	// Release heap tables
+	for (int heapTblPages = as->heapDirIdx; heapTblPages > -1; heapTblPages--)
+	{
+		kfree(as->pgDirectoryPtr[heapTblPages]);
+	}
+
+	// release directory
+	kfree(as->pgDirectoryPtr);
+
+	// release addrspace
 	kfree(as);
 }
 
@@ -179,4 +216,3 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 
 	return 0;
 }
-

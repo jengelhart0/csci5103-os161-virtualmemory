@@ -48,6 +48,15 @@ struct vnode;
  * You write this.
  */
 
+// We can change this, but it's MAX size is PAGE_SIZE / PAGE_TABLE_ENTRIES
+ struct pageTableEntry {
+   paddr_t physicalAddress; //2^20
+   bool isRead; // 2^1
+   bool isWrite; // 2^1
+   bool isExecute; // 2^1
+   int sharedProcessCount; // 2^2
+ }
+
 struct addrspace {
 #if OPT_DUMBVM
         vaddr_t as_vbase1;
@@ -58,7 +67,12 @@ struct addrspace {
         size_t as_npages2;
         paddr_t as_stackpbase;
 #else
-        /* Put stuff here for your VM system */
+  // a directory table entry only needs a vaddr_t for the page table.
+  vaddr_t[PAGE_TABLE_ENTRIES] pgDirectoryPtr;
+  int stackDirIdx;
+  int stackTblIdx;
+  int heapDirIdx;
+  int heapTblIdx;
 #endif
 };
 
