@@ -59,9 +59,9 @@ as_create(void)
 	 as->heapTblIdx = PAGE_TABLE_ENTRIES;
 
 	 // set all pageTable pointers to -1
-	 as->pgDirectoryPtr = (vaddr_t[PAGE_TABLE_ENTRIES])kmalloc(PAGE_SIZE);
+	 as->pgDirectoryPtr = (struct pageTableEntry[PAGE_TABLE_ENTRIES])kmalloc(PAGE_SIZE);
 	 for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
-	 	as->pgDirectoryPtr[dirIdx] = -1;
+	 	as->pgDirectoryPtr[dirIdx] = 0; // what permissions do we want here?
 
 	return as;
 }
@@ -97,6 +97,20 @@ as_destroy(struct addrspace *as)
 	// Maybe just loop through all possible entries and skip -1 values?
 
 	// Release stack tables (& pages?)
+	for (int stackTblPages = 0; stackTblPages < PAGE_TABLE_ENTRIES; stackTblPages++)
+	{
+		struct pageTableEntry[PAGE_TABLE_ENTRIES] thisPage = as->pgDirectoryPtr[stackTblPages];
+		for (int stackPages = 0; stackPage < PAGE_TABLE_ENTRIES; stackPages++)
+		{
+			thisPage[stackPages].sharedProcessCount--;
+			// TODO if this is 0 we need to let coremap know nothing is using this memory
+		}
+
+		// free this page of the page table 
+		kfree(as->pgDirectoryPtr[stackTblPages]);
+	}
+	
+	
 	for (int stackTblPages = as->stackDirIdx; stackTblPages > -1; stackTblPages--)
 	{
 		struct pageTableEntry[PAGE_TABLE_ENTRIES] thisPage = as->pgDirectoryPtr[stackTblPages];
