@@ -106,11 +106,11 @@ as_destroy(struct addrspace *as)
 			// TODO if this is 0 we need to let coremap know nothing is using this memory
 		}
 
-		// free this page of the page table 
+		// free this page of the page table
 		kfree(as->pgDirectoryPtr[stackTblPages]);
 	}
-	
-	
+
+
 	for (int stackTblPages = as->stackDirIdx; stackTblPages > -1; stackTblPages--)
 	{
 		struct pageTableEntry[PAGE_TABLE_ENTRIES] thisPage = as->pgDirectoryPtr[stackTblPages];
