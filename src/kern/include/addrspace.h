@@ -49,24 +49,24 @@ struct vnode;
  */
 
 // We can change this, but it's MAX size is PAGE_SIZE / PAGE_TABLE_ENTRIES = 32 bits
- struct pageTableEntry {
-   vaddr_t fieldValue;
+//typedef __u32 pageTableEntry_t;
+//{
    //paddr_t physicalAddress // 2^20
    //bool isRead; // 2^1
    //bool isWrite; // 2^1
    //bool isExecute; // 2^1
    //bool isUsed; // 2^1
- };
- #define PG_TBL_ADRS(fieldValue) (fieldValue>>22)<<22 // first 10 - throw away the last 22
- #define PSY_PG_ADRS(fieldValue) (fieldValue>>12)<<12 // first 20 - throw away the last 12
+ //};
+ #define PG_TBL_ADRS(pageTableEntry) (pageTableEntry & DIRECTORY_FRAME) // first 10 - throw away the last 22
+ #define PSY_PG_ADRS(pageTableEntry) (pageTableEntry & PAGE_FRAME) // first 20 - throw away the last 12
  // Can use bits in the middle if we need more flags
- #define IS_READ_PAGE(fieldValue) (fieldValue>>3)&1 // grab the 4th to last bit
- #define IS_WRITE_PAGE(fieldValue) (fieldValue>>2)&1 // grab the 3rd to last bit
- #define IS_EXE_PAGE(fieldValue) (fieldValue>>1)&1 // grab the 2nd to last bit
- #define IS_USED_PAGE(fieldValue) fieldValue&1 // grab the last bit
+ #define IS_READ_PAGE(pageTableEntry) (pageTableEntry>>3)&1 // grab the 4th to last bit
+ #define IS_WRITE_PAGE(pageTableEntry) (pageTableEntry>>2)&1 // grab the 3rd to last bit
+ #define IS_EXE_PAGE(pageTableEntry) (pageTableEntry>>1)&1 // grab the 2nd to last bit
+ #define IS_USED_PAGE(pageTableEntry) pageTableEntry&1 // grab the last bit
 
-#define MAKE_PG_TBL_ADRS(fieldValue, pgOffset) PG_TBL_ADRS(fieldValue)+(pgOffset<<12) // clear out the flags - then add in pgOffset moved over 12
-#define MAKE_PSY_PG_ADRS(fieldValue, offset) PSY_PG_ADRS(fieldValue)+offset // clear out the flags - then add offset
+#define MAKE_PG_TBL_ADRS(pageTableEntry, pgOffset) PG_TBL_ADRS(pageTableEntry)+(pgOffset<<12) // clear out the flags - then add in pgOffset moved over 12
+#define MAKE_PSY_PG_ADRS(pageTableEntry, offset) PSY_PG_ADRS(pageTableEntry)+offset // clear out the flags - then add offset
 
 struct addrspace {
 #if OPT_DUMBVM
@@ -79,7 +79,7 @@ struct addrspace {
         paddr_t as_stackpbase;
 #else
   // a directory table entry with entries for the pageTables
-  struct pageTableEntry[PAGE_TABLE_ENTRIES] pgDirectoryPtr;
+  pageTableEntry_t *pgDirectoryPtr;//[PAGE_TABLE_ENTRIES];
   int stackDirIdx;
   int stackTblIdx;
   int heapDirIdx;

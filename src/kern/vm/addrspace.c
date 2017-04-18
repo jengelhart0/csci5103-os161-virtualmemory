@@ -59,7 +59,7 @@ as_create(void)
 	 as->heapTblIdx = PAGE_TABLE_ENTRIES;
 
 	 // set all pageTable pointers to -1
-	 as->pgDirectoryPtr = (struct pageTableEntry[PAGE_TABLE_ENTRIES])kmalloc(PAGE_SIZE);
+	 as->pgDirectoryPtr = (pageTableEntry_t*)kmalloc(PAGE_SIZE);
 	 for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
 	 	as->pgDirectoryPtr[dirIdx] = 0; // what permissions do we want here?
 
@@ -99,37 +99,23 @@ as_destroy(struct addrspace *as)
 	// Release stack tables (& pages?)
 	for (int stackTblPages = 0; stackTblPages < PAGE_TABLE_ENTRIES; stackTblPages++)
 	{
-		struct pageTableEntry[PAGE_TABLE_ENTRIES] thisPage = as->pgDirectoryPtr[stackTblPages];
-		for (int stackPages = 0; stackPage < PAGE_TABLE_ENTRIES; stackPages++)
+		//pageTableEntry_t thisPage = as->pgDirectoryPtr[stackTblPages];
+		for (int stackPages = 0; stackPages < PAGE_TABLE_ENTRIES; stackPages++)
 		{
-			thisPage[stackPages].sharedProcessCount--;
-			// TODO if this is 0 we need to let coremap know nothing is using this memory
+		// TODO this is quite wrong
+			//paddr_t pgAddress = thisPage[stackPages] & PAGE_FRAME;
+			//free_pages(pgAddress);
 		}
 
 		// free this page of the page table
-		kfree(as->pgDirectoryPtr[stackTblPages]);
+		vaddr_t pgTblAddress = PG_TBL_ADRS(as->pgDirectoryPtr[stackTblPages]);
+		free_kpages(pgTblAddress);
+
+		// TODO add a break when we find unused tables - why waste time cycling empty
 	}
 
-
-	for (int stackTblPages = as->stackDirIdx; stackTblPages > -1; stackTblPages--)
-	{
-		struct pageTableEntry[PAGE_TABLE_ENTRIES] thisPage = as->pgDirectoryPtr[stackTblPages];
-		for (int stackPages = as->stackTblIdx; stackPages > -1; stackPages--)
-		{
-			thisPage[stackPages].sharedProcessCount--;
-			// TODO if this is 0 we need to let coremap know nothing is using this memory
-		}
-
-		// free this page of the page table and reset the inner counter for the next
-		kfree(as->pgDirectoryPtr[stackTblPages]);
-		as->stackTblIdx = PAGE_TABLE_ENTRIES - 1;
-	}
-
-	// Release heap tables
-	for (int heapTblPages = as->heapDirIdx; heapTblPages > -1; heapTblPages--)
-	{
-		kfree(as->pgDirectoryPtr[heapTblPages]);
-	}
+	// TODO Release heap tables
+	//for (int heapTblPages = as->heapDirIdx; heapTblPages > -1; heapTblPages--)
 
 	// release directory
 	kfree(as->pgDirectoryPtr);
