@@ -57,17 +57,17 @@ struct vnode;
    //bool isExecute; // 2^1
    //bool isUsed; // 2^1
  //};
- #define PG_TBL_ADRS(pageTableEntry) (pageTableEntry & DIRECTORY_FRAME) // first 10 - throw away the last 22
- #define PSY_PG_ADRS(pageTableEntry) (pageTableEntry & PAGE_FRAME) // first 20 - throw away the last 12
+ // masks from /src/kern/arch/mips/include/vm.h
+ #define DIR_TBL_OFFSET(pageTableEntry) (pageTableEntry & DIRECTORY_OFFSET)>>22 // first 10 - throw away the last 22
+ #define PG_TBL_OFFSET(pageTableEntry) (pageTableEntry & DIRECTORY_PAGE_OFFSET)>>12 // middle 10 - throw away the first 10 & last 12
+ #define PG_OFFSET(pageTableEntry) (pageTableEntry & OFFSET_BITS) // last 12 - throw away the first 20
+ #define PG_ADRS(pageTableEntry) (pageTableEntry & PAGE_FRAME) // first 20 - 0 out the last 12
  // Can use bits in the middle if we need more flags
- #define IS_READ_PAGE(pageTableEntry) (pageTableEntry>>3)&1 // grab the 4th to last bit
- #define IS_WRITE_PAGE(pageTableEntry) (pageTableEntry>>2)&1 // grab the 3rd to last bit
- #define IS_EXE_PAGE(pageTableEntry) (pageTableEntry>>1)&1 // grab the 2nd to last bit
- #define IS_USED_PAGE(pageTableEntry) pageTableEntry&1 // grab the last bit
-
-#define MAKE_PG_TBL_ADRS(pageTableEntry, pgOffset) PG_TBL_ADRS(pageTableEntry)+(pgOffset<<12) // clear out the flags - then add in pgOffset moved over 12
-#define MAKE_PSY_PG_ADRS(pageTableEntry, offset) PSY_PG_ADRS(pageTableEntry)+offset // clear out the flags - then add offset
-
+ #define IS_READ_PAGE(pageTableEntry) (pageTableEntry & READ_BIT) // grab the 4th to last bit
+ #define IS_WRITE_PAGE(pageTableEntry) (pageTableEntry & WRITE_BIT) // grab the 3rd to last bit
+ #define IS_EXE_PAGE(pageTableEntry) (pageTableEntry & EXECUTE_BIT) // grab the 2nd to last bit
+ #define IS_USED_PAGE(pageTableEntry) (pageTableEntry & USED_BIT) // grab the last bit
+ 
 struct addrspace {
 #if OPT_DUMBVM
         vaddr_t as_vbase1;
