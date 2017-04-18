@@ -99,16 +99,17 @@ as_destroy(struct addrspace *as)
 	// Release stack tables (& pages?)
 	for (int stackTblPages = 0; stackTblPages < PAGE_TABLE_ENTRIES; stackTblPages++)
 	{
-		//pageTableEntry_t thisPage = as->pgDirectoryPtr[stackTblPages];
+		if (!IS_USED_PAGE(as->pgDirectoryPtr[stackTblPages]))
+			continue;
+		vaddr_t pgTblAddress = PG_ADRS(as->pgDirectoryPtr[stackTblPages]);
 		for (int stackPages = 0; stackPages < PAGE_TABLE_ENTRIES; stackPages++)
 		{
-		// TODO this is quite wrong
-			//paddr_t pgAddress = thisPage[stackPages] & PAGE_FRAME;
-			//free_pages(pgAddress);
+			if (!IS_USED_PAGE(pgTblAddress[stackPages]))
+				continue;
+			// TODO free physical memory
 		}
 
 		// free this page of the page table
-		vaddr_t pgTblAddress = PG_TBL_ADRS(as->pgDirectoryPtr[stackTblPages]);
 		free_kpages(pgTblAddress);
 
 		// TODO add a break when we find unused tables - why waste time cycling empty
