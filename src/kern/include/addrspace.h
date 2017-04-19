@@ -58,16 +58,17 @@ struct vnode;
    //bool isUsed; // 2^1
  //};
  // masks from /src/kern/arch/mips/include/vm.h
- #define DIR_TBL_OFFSET(pageTableEntry) (pageTableEntry & DIRECTORY_OFFSET)>>22 // first 10 - throw away the last 22
- #define PG_TBL_OFFSET(pageTableEntry) (pageTableEntry & DIRECTORY_PAGE_OFFSET)>>12 // middle 10 - throw away the first 10 & last 12
- #define PG_OFFSET(pageTableEntry) (pageTableEntry & OFFSET_BITS) // last 12 - throw away the first 20
- #define PG_ADRS(pageTableEntry) (pageTableEntry & PAGE_FRAME) // first 20 - 0 out the last 12
+ #define DIR_TBL_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & DIRECTORY_OFFSET)>>22 // first 10 - throw away the last 22
+ #define PG_TBL_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & DIRECTORY_PAGE_OFFSET)>>12 // middle 10 - throw away the first 10 & last 12
+ #define PG_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & OFFSET_BITS) // last 12 - throw away the first 20
+ #define PG_ADRS(pageTableEntry) (pageTableEntry_t *)((pageTableEntry_t)pageTableEntry & PAGE_FRAME) // first 20 - 0 out the last 12
+ #define MAKE_VADDR(dirIdx,pgTblIdx,psyOffset) (pageTableEntry_t *)(dirIdx<<22 + pgTblIdx<<12 + psyOffset) // 10 from dirIdx; 10 from pgTblIdx; 12 phsy ofset 
  // Can use bits in the middle if we need more flags
- #define IS_READ_PAGE(pageTableEntry) (pageTableEntry & READ_BIT) // grab the 4th to last bit
- #define IS_WRITE_PAGE(pageTableEntry) (pageTableEntry & WRITE_BIT) // grab the 3rd to last bit
- #define IS_EXE_PAGE(pageTableEntry) (pageTableEntry & EXECUTE_BIT) // grab the 2nd to last bit
- #define IS_USED_PAGE(pageTableEntry) (pageTableEntry & USED_BIT) // grab the last bit
- 
+ #define IS_READ_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & READ_BIT) // grab the 4th to last bit
+ #define IS_WRITE_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & WRITE_BIT) // grab the 3rd to last bit
+ #define IS_EXE_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & EXECUTE_BIT) // grab the 2nd to last bit
+ #define IS_USED_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & USED_BIT) // grab the last bit
+
 struct addrspace {
 #if OPT_DUMBVM
         vaddr_t as_vbase1;
@@ -79,7 +80,7 @@ struct addrspace {
         paddr_t as_stackpbase;
 #else
   // a directory table entry with entries for the pageTables
-  pageTableEntry_t *pgDirectoryPtr;//[PAGE_TABLE_ENTRIES];
+  pageTableEntry_t **pgDirectoryPtr;//[PAGE_TABLE_ENTRIES];
   int stackDirIdx;
   int stackTblIdx;
   int heapDirIdx;
