@@ -48,7 +48,7 @@
 
 struct coremap_entry {
 	// struct pageTableEntry *pte; // pointer to second level page table pte
-	uint32_t tlb_idx;
+	int tlb_idx;
 	/* bit fields: can only take values 0 or 1 with 1-bit fields */
 	uint32_t allocated:1;
 	uint32_t dirty:1; // needed?

@@ -58,7 +58,7 @@ vm_bootstrap(void)
 		(cm.entries + i)->tlb_idx = -1;
 		(cm.entries + i)->allocated = 0;
 		(cm.entries + i)->dirty = 0;
-		(cm.entries + i)->more_contig_frames = 1;
+		(cm.entries + i)->more_contig_frames = 0;
 		(cm.entries + i)->kern = 0;
 	}
 
@@ -118,8 +118,9 @@ getppages(unsigned long npages)
 		}	
 
 		if(!entry_found) {
+			kprintf("No memory available!\n");
 			spinlock_release(&cm.cm_lock);
-			return ENOMEM;
+			return 0;
 		}
 
 		struct coremap_entry *return_entry;
@@ -132,7 +133,7 @@ getppages(unsigned long npages)
 			}
 		}
 
-		addr = cm.first_mapped_paddr + (i * PAGE_SIZE);
+		addr = cm.first_mapped_paddr + (entry_idx * PAGE_SIZE);
 
 		spinlock_release(&cm.cm_lock);		
 
