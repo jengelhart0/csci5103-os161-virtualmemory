@@ -50,18 +50,18 @@ as_create(void)
 		return NULL;
 	}
 
-	 // Set the stack (grows up) to be -1
-	 as->stackDirIdx = -1;
-	 as->stackTblIdx = -1;
+	// Set the stack (grows down) to be PAGE_TABLE_ENTRIES
+	as->stackDirIdx = PAGE_TABLE_ENTRIES;
+	as->stackTblIdx = PAGE_TABLE_ENTRIES;
 
-	 // Set the heap (grows down) to be PAGE_TABLE_ENTRIES
-	 as->heapDirIdx = PAGE_TABLE_ENTRIES;
-	 as->heapTblIdx = PAGE_TABLE_ENTRIES;
+	 // Set the heap (grows up) to be -1
+	 as->heapDirIdx = -1;
+	 as->heapTblIdx = -1;
 
 	 // set all pageTable pointers to -1
-	 as->pgDirectoryPtr = (pageTableEntry_t*)kmalloc(PAGE_SIZE);
+	 as->pgDirectoryPtr = (pageTableEntry_t**)kmalloc(PAGE_SIZE);
 	 for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
-	 	as->pgDirectoryPtr[dirIdx] = 0; // what permissions do we want here?
+	 	as->pgDirectoryPtr[dirIdx] = 0; // what permissions do we want here? - none
 
 	return as;
 }
@@ -99,17 +99,19 @@ as_destroy(struct addrspace *as)
 	// Release stack tables (& pages?)
 	for (int stackTblPages = 0; stackTblPages < PAGE_TABLE_ENTRIES; stackTblPages++)
 	{
-		//pageTableEntry_t thisPage = as->pgDirectoryPtr[stackTblPages];
+		//pageTableEntry_t dirTblEntry = (pageTableEntry_t)as->pgDirectoryPtr[stackTblPages];
+		if (!IS_USED_PAGE(as->pgDirectoryPtr[stackTblPages]))
+			continue;
+		pageTableEntry_t *pgTblAddress = PG_ADRS(as->pgDirectoryPtr[stackTblPages]);
 		for (int stackPages = 0; stackPages < PAGE_TABLE_ENTRIES; stackPages++)
 		{
-		// TODO this is quite wrong
-			//paddr_t pgAddress = thisPage[stackPages] & PAGE_FRAME;
-			//free_pages(pgAddress);
+			if (!IS_USED_PAGE(pgTblAddress[stackPages]))
+				continue;
+			// TODO free physical memory
 		}
 
 		// free this page of the page table
-		vaddr_t pgTblAddress = PG_TBL_ADRS(as->pgDirectoryPtr[stackTblPages]);
-		free_kpages(pgTblAddress);
+		free_kpages(pgTblAddress[0]);
 
 		// TODO add a break when we find unused tables - why waste time cycling empty
 	}
@@ -167,17 +169,55 @@ int
 as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 		 int readable, int writeable, int executable)
 {
-	/*
-	 * Write this.
-	 */
+	// Align the region. First, the base...
+	memsize += vaddr & ~(vaddr_t)PAGE_FRAME;
+	vaddr &= PAGE_FRAME;
 
-	(void)as;
-	(void)vaddr;
-	(void)memsize;
-	(void)readable;
-	(void)writeable;
-	(void)executable;
-	return ENOSYS;
+	// ...and now the length.
+	memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
+	size_t npages = memsize / PAGE_SIZE;
+
+	// create a PTE with permissions set - not used yet
+	pageTableEntry_t pte = 0;
+	if (readable) pte += READ_BIT;
+	if (writeable) pte += WRITE_BIT;
+	if (executable) pte += EXECUTE_BIT;
+
+	// get starting values in our directory & page tables
+	int dirIdx = DIR_TBL_OFFSET(vaddr);
+	int pgTblIdx = (PG_TBL_OFFSET(vaddr)) - 1;
+
+	// heap grows up
+	for (size_t idx = 0; idx < npages; idx++)
+	{
+		pgTblIdx++;
+		// if we've reached the end of the pgTbl, get the next dirTbl entry
+		if (pgTblIdx == PAGE_TABLE_ENTRIES)
+		{
+			pgTblIdx = 0;
+			dirIdx++;
+		}
+
+		// if this dirTbl entry isn't initialized -- set it
+		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
+			*as->pgDirectoryPtr[dirIdx] = alloc_kpages(1) + USED_BIT;
+
+		pageTableEntry_t *pgTbl = PG_ADRS(as->pgDirectoryPtr[dirIdx]);
+		// freak out if this pte is already used
+		if (IS_USED_PAGE(pgTbl[pgTblIdx]))
+			return ENOSYS;
+
+		// add the permission bits to the pgTbl entry
+		// - even though it doesn't have it's paddr_t part yet
+		pgTbl[pgTblIdx] = pte;
+	}
+
+	// this may need to be more complicated
+	// I didn't realize that the vaddr was input and not controlled by addrspace
+	 as->heapDirIdx = dirIdx;
+	 as->heapTblIdx = pgTblIdx;
+
+	return 0;
 }
 
 int
@@ -205,14 +245,23 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/*
-	 * Write this.
-	 */
-
-	(void)as;
-
 	/* Initial user-level stack pointer */
 	*stackptr = USERSTACK;
+
+	//*stackptr = MAKE_VADDR(as->stackDirIdx, as->stackTblIdx, 0);
+	as->stackDirIdx = DIR_TBL_OFFSET(*stackptr);
+	as->stackTblIdx = PG_TBL_OFFSET(*stackptr);
+
+	// stack grows down - allocate a page table for it to start.
+
+	// if this dirTbl entry isn't initialized -- set it
+	if (!IS_USED_PAGE(as->pgDirectoryPtr[as->stackDirIdx]))
+		*as->pgDirectoryPtr[as->stackDirIdx] = alloc_kpages(1) + USED_BIT;
+
+	pageTableEntry_t *pgTbl = PG_ADRS(as->pgDirectoryPtr[as->stackDirIdx]);
+	// freak out if this pte is already used
+	if (IS_USED_PAGE(pgTbl[as->stackTblIdx]))
+		return ENOSYS;
 
 	return 0;
 }

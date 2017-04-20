@@ -39,7 +39,9 @@
 #define PAGE_TABLE_ENTRIES 1024 /* number of page table entries per VM page */
 
 #define PAGE_FRAME 0xfffff000   /* mask for getting page number from addr */
-#define DIRECTORY_FRAME 0xffc00000 /* mask for getting directory number from addr */
+#define DIRECTORY_OFFSET 0xffc00000 /* mask for getting directory number from directory vaddr */
+#define DIRECTORY_PAGE_OFFSET 0x003FF000 /* mask for getting page number from directory vaddr */
+#define OFFSET_BITS 0x00000FFF /* mask for getting page offset from vaddr */
 #define READ_BIT 0x00000008 /* mask for getting read bit from addr */
 #define WRITE_BIT 0x00000004 /* mask for getting write bit from addr */
 #define EXECUTE_BIT 0x00000002 /* mask for getting execute bit from addr */
@@ -73,7 +75,7 @@
  * a valid address, and will make a *huge* mess if you scribble on it.
  */
 #define PADDR_TO_KVADDR(paddr) ((paddr)+MIPS_KSEG0)
-
+#define KVADDR_TO_PADDR(kvaddr) ((kvaddr)-MIPS_KSEG0)
 /*
  * The top of user space. (Actually, the address immediately above the
  * last valid user address.)
