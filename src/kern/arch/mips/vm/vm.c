@@ -11,7 +11,7 @@
 #include <vm.h>
 
 /*
- * 
+ *
  */
 
 /* under dumbvm, always have 72k of user stack */
@@ -35,19 +35,19 @@ vm_bootstrap(void)
 	unsigned max_coremap_entries = memsize / PAGE_SIZE;
 	cm.entries = (struct coremap_entry *)
 			  kmalloc(max_coremap_entries * sizeof(struct coremap_entry));
-	if (cm.entries == NULL) {	
+	if (cm.entries == NULL) {
 		panic("kmalloc() failed trying to allocate coremap entry space!\n");
 	}
-	/* 
+	/*
 	 * At this stage in the bootstrap process, kmalloc will be ram_steal()ing if
 	 * it needs a fresh page, meaning firstpaddr will be changing.
-	 * Our call to kmalloc for the coremap can cause the result of 
-	 * ram_getsize() to change (if coremap allocation 
+	 * Our call to kmalloc for the coremap can cause the result of
+	 * ram_getsize() to change (if coremap allocation
 	 * cannot be handled by an existing subpage), so we call it again to
 	 * get the updated memsize. This works only because we modified
 	 * ram_getsize(), which wasn't being used by anything.
 	 */
-	memsize = ram_getsize(); 	
+	memsize = ram_getsize();
 	/* num_frames will now track how many coremap entries to manage/allocate */
 	cm.num_frames = memsize / PAGE_SIZE;
 	cm.first_mapped_paddr = ram_getfirstfree();
@@ -100,7 +100,7 @@ getppages(unsigned long npages)
 		int entry_found = 0;
 		int entry_idx;
 
-		spinlock_acquire(&cm.cm_lock);			
+		spinlock_acquire(&cm.cm_lock);
 
 		for(i = 0; i < cm.num_frames && !entry_found; i++) {
 			if((cm.entries + i)->allocated) {
@@ -115,7 +115,7 @@ getppages(unsigned long npages)
 					break;
 				}
 			}
-		}	
+		}
 
 		if(!entry_found) {
 			kprintf("No memory available!\n");
@@ -124,7 +124,7 @@ getppages(unsigned long npages)
 		}
 
 		struct coremap_entry *return_entry;
-		return_entry = (cm.entries + entry_idx);	
+		return_entry = (cm.entries + entry_idx);
 		for(j = 0; j < npages; j++) {
 			(return_entry + j)->allocated = 1;
 			(return_entry + j)->kern = 1;
@@ -135,7 +135,7 @@ getppages(unsigned long npages)
 
 		addr = cm.first_mapped_paddr + (entry_idx * PAGE_SIZE);
 
-		spinlock_release(&cm.cm_lock);		
+		spinlock_release(&cm.cm_lock);
 
 	} else {
 		spinlock_acquire(&stealmem_lock);
@@ -168,8 +168,8 @@ free_kpages(vaddr_t addr)
 	}
 }
 
-int 
-cm_free_frames(paddr_t pa) 
+int
+cm_free_frames(paddr_t pa)
 {
 	unsigned cm_idx;
 	/* pa guaranteed to be page aligned, so truncation should not be
@@ -180,21 +180,21 @@ cm_free_frames(paddr_t pa)
 	cm_idx = (pa - cm.first_mapped_paddr) / PAGE_SIZE;
 
 	/* verify within coremap bounds */
-	KASSERT(cm_idx < cm.num_frames);	
-	
+	KASSERT(cm_idx < cm.num_frames);
+
 	spinlock_acquire(&cm.cm_lock);
-	
+
 	struct coremap_entry *to_free;
 	to_free = (cm.entries + cm_idx);
-	
+
 	int more_to_free = 1;
 	while(more_to_free) {
 		to_free->tlb_idx = -1;
 		to_free->allocated = 0;
 		to_free->kern = 0;
 		more_to_free = to_free->more_contig_frames;
-		to_free->more_contig_frames = 0;	
-		
+		to_free->more_contig_frames = 0;
+
 		to_free = to_free + 1;
 	}
 
@@ -213,65 +213,5 @@ vm_tlbshootdown(const struct tlbshootdown *ts)
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
-	return 0;
-}
-
-
-struct addrspace *                                                 
-as_create(void)                                                    
-{
-	return NULL;
-}  
-
-void                                                               
-as_destroy(struct addrspace *as)                                   
-{                                                                  
-        vm_can_sleep();                                        
-        kfree(as);                                                 
-}  
-
-void
-as_activate(void)
-{}
-
-void
-as_deactivate(void)
-{}
-
-int
-as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz, 
-                 int readable, int writeable, int executable)
-{
-	return 0;
-}
-
-//static                                                             
-//void                                                               
-//as_zero_region(paddr_t paddr, unsigned npages)                     
-//{                                                                  
-//        bzero((void *)PADDR_TO_KVADDR(paddr), npages * PAGE_SIZE); 
-//} 
-
-int
-as_prepare_load(struct addrspace *as) {
-	return 0;
-}
-
-int                                                                
-as_complete_load(struct addrspace *as)                             
-{                                                                  
-        vm_can_sleep();                                        
-        return 0;                                                  
-}                                                                  
-                                                                   
-int                                                                
-as_define_stack(struct addrspace *as, vaddr_t *stackptr)           
-{                                                                  
-        return 0;                                                  
-}                                                                  
-                                                                   
-int                                                                
-as_copy(struct addrspace *old, struct addrspace **ret)             
-{                  
 	return 0;
 }
