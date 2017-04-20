@@ -30,20 +30,46 @@
 #ifndef _VM_H_
 #define _VM_H_
 
+
+#include <spinlock.h>
+#include <machine/vm.h>
+
 /*
  * VM system-related definitions.
  *
- * You'll probably want to add stuff here.
  */
 
-
-#include <machine/vm.h>
+/* Defines coremap to map and maintain physical memory. */
 
 /* Fault-type arguments to vm_fault() */
 #define VM_FAULT_READ        0    /* A read was attempted */
 #define VM_FAULT_WRITE       1    /* A write was attempted */
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
+struct coremap_entry {
+	// struct pageTableEntry *pte; // pointer to second level page table pte
+	int tlb_idx;
+	/* bit fields: can only take values 0 or 1 with 1-bit fields */
+	uint32_t allocated:1;
+	uint32_t dirty:1; // needed?
+	uint32_t more_contig_frames:1; // 1 if contig-alloc'ed frames remain
+	uint32_t kern:1; 
+};
+
+struct coremap {
+	struct spinlock cm_lock;
+	struct coremap_entry *entries;
+	struct coremap_entry *next_free;
+	unsigned next_free_idx;
+	paddr_t first_mapped_paddr;
+	unsigned num_frames;
+};
+	
+/* Use coremap to allocate npages of frames */
+paddr_t cm_alloc_frames(unsigned npages);
+
+/* Free contiguously allocated frames starting at pa */
+int cm_free_frames(paddr_t pa);
 
 /* Initialization function */
 void vm_bootstrap(void);
