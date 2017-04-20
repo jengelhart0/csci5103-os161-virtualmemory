@@ -320,7 +320,7 @@ kmalloctest4thread(void *sm, unsigned long num)
 		}
 		ptrs[p] = kmalloc(sizes[p] * PAGE_SIZE);
 		if (ptrs[p] == NULL) {
-			panic("kmalloctest4: thread %lu: "
+			kprintf("kmalloctest4: thread %lu: "
 			      "allocating %u pages failed\n",
 			      num, sizes[p]);
 		}

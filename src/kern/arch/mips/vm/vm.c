@@ -163,12 +163,8 @@ alloc_kpages(unsigned npages)
 void
 free_kpages(vaddr_t addr)
 {
-	int result;
 	if(vm_bootstrapped) {
-		result = cm_free_frames(KVADDR_TO_PADDR(addr));
-		if(result) {
-			panic("Failed to free frames in cm_free_frames\n");
-		}
+		cm_free_frames(KVADDR_TO_PADDR(addr));
 	}
 }
 
@@ -180,7 +176,7 @@ cm_free_frames(paddr_t pa)
 	 * a concern here.
 	 */
 	KASSERT(pa >= cm.first_mapped_paddr);
-
+	KASSERT(pa % PAGE_SIZE == 0);
 	cm_idx = (pa - cm.first_mapped_paddr) / PAGE_SIZE;
 
 	/* verify within coremap bounds */
