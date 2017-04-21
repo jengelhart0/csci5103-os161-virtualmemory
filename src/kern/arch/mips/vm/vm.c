@@ -30,6 +30,9 @@ void
 vm_bootstrap(void)
 {
 	spinlock_init(&cm.cm_lock);
+	
+	cm.last_allocated = -1;
+	cm.oldest = -1;
 
 	uint32_t memsize = ram_getsize();
 	unsigned max_coremap_entries = memsize / PAGE_SIZE;
@@ -56,6 +59,7 @@ vm_bootstrap(void)
 	for(i = 0; i < cm.num_frames; i++) {
 		//(coremap.entries + i)->pte = NULL;
 		(cm.entries + i)->tlb_idx = -1;
+		(cm.entries + i)->next_allocated = -1;
 		(cm.entries + i)->allocated = 0;
 		(cm.entries + i)->dirty = 0;
 		(cm.entries + i)->more_contig_frames = 0;
@@ -63,7 +67,6 @@ vm_bootstrap(void)
 	}
 
 	/* First entry is next free at beginning */
-	cm.next_free = cm.entries;
 	vm_bootstrapped = 1;
 }
 
@@ -90,7 +93,7 @@ vm_can_sleep(void)
 /* Used to get npages physical pages for kernel allocation */
 static
 paddr_t
-getppages(unsigned long npages)
+getppages(int kern, unsigned long npages)
 {
 	paddr_t addr;
 	/* Before vm_bootstrapped, we are stealing ram. After, coremap manages mem */
@@ -116,18 +119,28 @@ getppages(unsigned long npages)
 				}
 			}
 		}
-
+		/* If no free frames, begin eviction routines */
 		if(!entry_found) {
-			kprintf("No memory available!\n");
-			spinlock_release(&cm.cm_lock);
-			return 0;
+	// UNCOMMENT ONCE evict_frame() written
+	//		entry_idx = evict_frame();
+	//		if(entry_idx == -1) {	
+				kprintf("No memory available!\n");
+				spinlock_release(&cm.cm_lock);
+				return 0;
+	//		}
 		}
 
 		struct coremap_entry *return_entry;
 		return_entry = (cm.entries + entry_idx);
 		for(j = 0; j < npages; j++) {
 			(return_entry + j)->allocated = 1;
-			(return_entry + j)->kern = 1;
+			if(kern) {
+				(return_entry + j)->kern = 1;
+			} else {
+				/* Update allocation order chain */
+				cm.entries[cm.last_allocated].next_allocated = entry_idx;	
+				cm.last_allocated = entry_idx;
+			}
 			if(j < npages - 1) {
 				(return_entry + j)->more_contig_frames = 1;
 			}
@@ -153,7 +166,8 @@ alloc_kpages(unsigned npages)
 {
 	paddr_t pa;
 	vm_can_sleep();
-	pa = getppages(npages);
+	/* Get npages for kernel (1) */
+	pa = getppages(1, npages);
 	if (pa==0) {
 		return 0;
 	}
@@ -194,6 +208,12 @@ cm_free_frames(paddr_t pa)
 		to_free->kern = 0;
 		more_to_free = to_free->more_contig_frames;
 		to_free->more_contig_frames = 0;
+		
+		/*
+		 * NOTE: leave next_allocated as is: we need ghosts to remain
+		 * until they are discovered as unallocated so we don't break
+		 * the allocation order chain
+		 */
 
 		to_free = to_free + 1;
 	}
