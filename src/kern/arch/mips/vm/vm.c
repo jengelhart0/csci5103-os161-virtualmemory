@@ -9,6 +9,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <swap.h>
 
 /*
  *
@@ -18,6 +19,7 @@
 /* (this must be > 64K so argument blocks of size ARG_MAX will fit) */
 #define DUMBVM_STACKPAGES    18
 
+
 static struct coremap cm;
 static unsigned vm_bootstrapped = 0;
 
@@ -26,9 +28,8 @@ static unsigned vm_bootstrapped = 0;
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
-void
-vm_bootstrap(void)
-{
+void init_coremap(void) {
+
 	spinlock_init(&cm.cm_lock);
 	
 	cm.last_allocated = -1;
@@ -38,9 +39,7 @@ vm_bootstrap(void)
 	unsigned max_coremap_entries = memsize / PAGE_SIZE;
 	cm.entries = (struct coremap_entry *)
 			  kmalloc(max_coremap_entries * sizeof(struct coremap_entry));
-	if (cm.entries == NULL) {
-		panic("kmalloc() failed trying to allocate coremap entry space!\n");
-	}
+	KASSERT(cm.entries);
 	/*
 	 * At this stage in the bootstrap process, kmalloc will be ram_steal()ing if
 	 * it needs a fresh page, meaning firstpaddr will be changing.
@@ -65,8 +64,12 @@ vm_bootstrap(void)
 		(cm.entries + i)->more_contig_frames = 0;
 		(cm.entries + i)->kern = 0;
 	}
-
-	/* First entry is next free at beginning */
+}
+void
+vm_bootstrap(void)
+{
+	init_swapdisk();	
+	init_coremap();
 	vm_bootstrapped = 1;
 }
 

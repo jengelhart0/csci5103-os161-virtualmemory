@@ -338,8 +338,8 @@ file      proc/proc.c
 #
 
 file      vm/kmalloc.c
-
-file   vm/addrspace.c
+file   	  vm/swap.c
+file   	  vm/addrspace.c
 # optofffile dumbvm   vm/genericvm.c
 
 #

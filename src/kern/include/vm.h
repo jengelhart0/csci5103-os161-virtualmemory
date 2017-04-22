@@ -80,6 +80,9 @@ int cm_free_frames(paddr_t pa);
  */
 int evict_frame(void);
 
+/* Coremap initialization function */
+void init_coremap(void);
+
 /* Initialization function */
 void vm_bootstrap(void);
 
