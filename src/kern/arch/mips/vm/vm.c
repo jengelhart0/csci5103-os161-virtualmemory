@@ -9,6 +9,7 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
+#include <swap.h>
 
 /*
  *
@@ -18,6 +19,7 @@
 /* (this must be > 64K so argument blocks of size ARG_MAX will fit) */
 #define DUMBVM_STACKPAGES    18
 
+
 static struct coremap cm;
 static unsigned vm_bootstrapped = 0;
 
@@ -26,25 +28,18 @@ static unsigned vm_bootstrapped = 0;
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
-/* Use coremap to allocate npages of frames */
-paddr_t cm_alloc_frames(unsigned npages)
-{
-	(void)npages;
-	return (paddr_t)0;
-}
+void init_coremap(void) {
 
-void
-vm_bootstrap(void)
-{
 	spinlock_init(&cm.cm_lock);
+	
+	cm.last_allocated = -1;
+	cm.oldest = -1;
 
 	uint32_t memsize = ram_getsize();
 	unsigned max_coremap_entries = memsize / PAGE_SIZE;
 	cm.entries = (struct coremap_entry *)
 			  kmalloc(max_coremap_entries * sizeof(struct coremap_entry));
-	if (cm.entries == NULL) {
-		panic("kmalloc() failed trying to allocate coremap entry space!\n");
-	}
+	KASSERT(cm.entries);
 	/*
 	 * At this stage in the bootstrap process, kmalloc will be ram_steal()ing if
 	 * it needs a fresh page, meaning firstpaddr will be changing.
@@ -63,14 +58,18 @@ vm_bootstrap(void)
 	for(i = 0; i < cm.num_frames; i++) {
 		//(coremap.entries + i)->pte = NULL;
 		(cm.entries + i)->tlb_idx = -1;
+		(cm.entries + i)->next_allocated = -1;
 		(cm.entries + i)->allocated = 0;
 		(cm.entries + i)->dirty = 0;
 		(cm.entries + i)->more_contig_frames = 0;
 		(cm.entries + i)->kern = 0;
 	}
-
-	/* First entry is next free at beginning */
-	cm.next_free = cm.entries;
+}
+void
+vm_bootstrap(void)
+{
+	init_swapdisk();	
+	init_coremap();
 	vm_bootstrapped = 1;
 }
 
@@ -94,10 +93,13 @@ vm_can_sleep(void)
 	}
 }
 
-/* Used to get npages physical pages for kernel allocation */
+/* Used to get npages physical pages for kernel allocation,
+ * or 1 page for non-kernel allocation. If kernel pages, 
+ * pte should be NULL. 
+ */
 static
 paddr_t
-getppages(unsigned long npages)
+getppages(struct pageTableEntry_t *pte, unsigned long npages)
 {
 	paddr_t addr;
 	/* Before vm_bootstrapped, we are stealing ram. After, coremap manages mem */
@@ -123,21 +125,37 @@ getppages(unsigned long npages)
 				}
 			}
 		}
-
+		/* If no free frames, begin eviction routines */
 		if(!entry_found) {
-			kprintf("No memory available!\n");
-			spinlock_release(&cm.cm_lock);
-			return 0;
+	// UNCOMMENT ONCE evict_frame() written
+	//		entry_idx = evict_frame();
+	//		if(entry_idx == -1) {	
+				kprintf("No memory available!\n");
+				spinlock_release(&cm.cm_lock);
+				return 0;
+	//		}
 		}
 
 		struct coremap_entry *return_entry;
 		return_entry = (cm.entries + entry_idx);
-		for(j = 0; j < npages; j++) {
-			(return_entry + j)->allocated = 1;
-			(return_entry + j)->kern = 1;
-			if(j < npages - 1) {
-				(return_entry + j)->more_contig_frames = 1;
+
+		/* Only kernel pages have no pte */
+		if(!pte) {
+			for(j = 0; j < npages; j++) {
+				(return_entry + j)->allocated = 1;
+					(return_entry + j)->kern = 1;
+				if(j < npages - 1) {
+					(return_entry + j)->more_contig_frames = 1;
+				}
 			}
+		/* Non-kernel pages are allocated 1 at a time: no need to loop */
+		} else {
+			/* Set entry pte */	
+			return_entry->pte = pte;
+
+			/* Update allocation order chain */
+			cm.entries[cm.last_allocated].next_allocated = entry_idx;	
+			cm.last_allocated = entry_idx;
 		}
 
 		addr = cm.first_mapped_paddr + (entry_idx * PAGE_SIZE);
@@ -160,7 +178,8 @@ alloc_kpages(unsigned npages)
 {
 	paddr_t pa;
 	vm_can_sleep();
-	pa = getppages(npages);
+	/* Get npages for kernel */
+	pa = getppages(NULL, npages);
 	if (pa==0) {
 		return 0;
 	}
@@ -196,11 +215,18 @@ cm_free_frames(paddr_t pa)
 
 	int more_to_free = 1;
 	while(more_to_free) {
+		to_free->pte = NULL;
 		to_free->tlb_idx = -1;
 		to_free->allocated = 0;
 		to_free->kern = 0;
 		more_to_free = to_free->more_contig_frames;
 		to_free->more_contig_frames = 0;
+		
+		/*
+		 * NOTE: leave next_allocated as is: we need ghosts to remain
+		 * until they are discovered as unallocated so we don't break
+		 * the allocation order chain
+		 */
 
 		to_free = to_free + 1;
 	}

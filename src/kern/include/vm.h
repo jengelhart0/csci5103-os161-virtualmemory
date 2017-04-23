@@ -47,29 +47,46 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
 struct coremap_entry {
-	// struct pageTableEntry *pte; // pointer to second level page table pte
+	struct pageTableEntry_t *pte; 	// pointer to second level page table pte
 	int tlb_idx;
+	/* Generously assumes 2^24 coremap entries exist. 
+	 * 25th bit allows -1 value for index.
+	 */
+	int next_allocated:25;
 	/* bit fields: can only take values 0 or 1 with 1-bit fields */
 	uint32_t allocated:1;
-	uint32_t dirty:1; // needed?
-	uint32_t more_contig_frames:1; // 1 if contig-alloc'ed frames remain
+	uint32_t dirty:1; 		// needed?
+	uint32_t more_contig_frames:1;  // 1 if contig-alloc'ed frames remain
 	uint32_t kern:1; 
 };
 
 struct coremap {
 	struct spinlock cm_lock;
+	/* Array of coremap entries */
 	struct coremap_entry *entries;
-	struct coremap_entry *next_free;
-	unsigned next_free_idx;
+	/* Indices needed for FIFO eviction */
+	int last_allocated;
+	int oldest;
+	/* First addr managed by coremap */
 	paddr_t first_mapped_paddr;
 	unsigned num_frames;
 };
 	
-/* Use coremap to allocate npages of frames */
-paddr_t cm_alloc_frames(unsigned npages);
-
 /* Free contiguously allocated frames starting at pa */
 int cm_free_frames(paddr_t pa);
+
+/* Selects best candidate for eviction from memory */
+int select_victim(void);
+
+/* 
+ * Uses coremap to evict next victim. Notifies correct pageTableEntry 
+ * and sets its swap index to block location on disk. Returns frame 
+ * idx for new allocation, or -1 on error. 
+ */
+int evict_frame(void);
+
+/* Coremap initialization function */
+void init_coremap(void);
 
 /* Initialization function */
 void vm_bootstrap(void);
