@@ -47,9 +47,9 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
 struct coremap_entry {
-	struct pageTableEntry_t *pte; 	// pointer to second level page table pte
+	pageTableEntry_t *pte; 	// pointer to second level page table pte
 	int tlb_idx;
-	/* Generously assumes 2^24 coremap entries exist. 
+	/* Generously assumes 2^24 coremap entries exist.
 	 * 25th bit allows -1 value for index.
 	 */
 	int next_allocated:25;
@@ -57,7 +57,7 @@ struct coremap_entry {
 	uint32_t allocated:1;
 	uint32_t dirty:1; 		// needed?
 	uint32_t more_contig_frames:1;  // 1 if contig-alloc'ed frames remain
-	uint32_t kern:1; 
+	uint32_t kern:1;
 };
 
 struct coremap {
@@ -71,17 +71,20 @@ struct coremap {
 	paddr_t first_mapped_paddr;
 	unsigned num_frames;
 };
-	
+
+/* wrapper for single page allocation by non-kernel functions */
+paddr_t cm_alloc_frame(pageTableEntry_t *pte);
+
 /* Free contiguously allocated frames starting at pa */
 int cm_free_frames(paddr_t pa);
 
 /* Selects best candidate for eviction from memory */
 int select_victim(void);
 
-/* 
- * Uses coremap to evict next victim. Notifies correct pageTableEntry 
- * and sets its swap index to block location on disk. Returns frame 
- * idx for new allocation, or -1 on error. 
+/*
+ * Uses coremap to evict next victim. Notifies correct pageTableEntry
+ * and sets its swap index to block location on disk. Returns frame
+ * idx for new allocation, or -1 on error.
  */
 int evict_frame(void);
 

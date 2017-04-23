@@ -81,16 +81,16 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	}
 
 	/* not really sure how to make a deep copy given that I'm using the same vaddr_t
-	newas->pgDirectoryPtr = (struct pageTableEntry_t *)kmalloc(PAGE_SIZE);
+	newas->pgDirectoryPtr = (pageTableEntry_t *)kmalloc(PAGE_SIZE);
 	for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
 	{
 		if (old->pgDirectoryPtr[dirIdx].isUsed)
 		{
-				new->pgDirectoryPtr[dirIdx].physicalAddress = cm_alloc_frames(1);
+				new->pgDirectoryPtr[dirIdx].physicalAddress = cm_alloc_frame(vaddr_t);
 				new->pgDirectoryPtr[dirIdx].isUsed = 1;
 				for (int pgIdx = 0; pgIdx < PAGE_TABLE_ENTRIES; pgIdx++)
 				{
-					struct pageTableEntry_t *pageTablePtr = MAKE_VADDR(dirIdx,pgIdx,0);
+					pageTableEntry_t *pageTablePtr = MAKE_VADDR(dirIdx,pgIdx,0);
 					if (pageTablePtr[pgIdx].isUsed)
 					{
 						// get paddr_t for allocating actual pageTable
@@ -217,7 +217,10 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 		// if this dirTbl entry isn't initialized -- set it
 		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
-			as->pgDirectoryPtr[dirIdx] = cm_alloc_frames(1) + USED_BIT;
+		{
+			as->pgDirectoryPtr[dirIdx] =
+				MAKE_PTE(cm_alloc_frame(MAKE_PTE_ADDR(dirIdx, 0, 0)), USED_BIT);
+		}
 
 		pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirIdx, pgIdx, 0);
 		// freak out if this pte is already used
@@ -251,7 +254,8 @@ as_prepare_load(struct addrspace *as)
 		for (int32_t pgIdx = 0; pgIdx < PAGE_TABLE_ENTRIES; pgIdx++)
 		{
 				pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirIdx, pgIdx, 0);
-				*pgTbl = cm_alloc_frames(1) + USED_BIT;
+				// add to existing permissions bytes
+				*pgTbl = MAKE_PTE(cm_alloc_frame(pgTbl), *pgTbl + USED_BIT);
 		}
 	}
 
@@ -259,7 +263,8 @@ as_prepare_load(struct addrspace *as)
 	for (int32_t pgIdx = 0; pgIdx <= pgMax; pgIdx++)
 	{
 			pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirMax, pgIdx, 0);
-			*pgTbl = cm_alloc_frames(1) + USED_BIT;
+			// add to existing permissions bytes
+			*pgTbl = MAKE_PTE(cm_alloc_frame(pgTbl), *pgTbl + USED_BIT);
 	}
 
  return 0;

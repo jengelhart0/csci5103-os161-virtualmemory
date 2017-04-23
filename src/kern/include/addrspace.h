@@ -65,6 +65,7 @@ struct pageTableEntryMap_t {
  #define PG_ADRS(pageTableEntry) (paddr_t)((pageTableEntry_t)pageTableEntry & PAGE_FRAME) // first 20 - 0 out the last 12
  #define MAKE_VADDR(dirIdx,pgTblIdx,psyOffset) (vaddr_t)((dirIdx<<22) + (pgTblIdx<<12) + psyOffset) // 10 from dirIdx; 10 from pgTblIdx; 12 phsy ofset
  #define MAKE_PTE_ADDR(dirIdx,pgTblIdx,psyOffset) (pageTableEntry_t *)((dirIdx<<22) + (pgTblIdx<<12) + psyOffset) // 10 from dirIdx; 10 from pgTblIdx; 12 phsy ofset
+ #define MAKE_PTE(paddr, otherBits) (pageTableEntry_t)(paddr + otherBits);
  // Can use bits in the middle if we need more flags
  #define IS_READ_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & READ_BIT)
  #define IS_WRITE_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & WRITE_BIT)
