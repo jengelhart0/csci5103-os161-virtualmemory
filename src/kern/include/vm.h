@@ -30,7 +30,8 @@
 #ifndef _VM_H_
 #define _VM_H_
 
-
+#include <types.h>
+#include <addrspace.h>
 #include <spinlock.h>
 #include <machine/vm.h>
 
@@ -47,12 +48,13 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
 struct coremap_entry {
-	struct pageTableEntry_t *pte; 	// pointer to second level page table pte
-	int tlb_idx;
+	pageTableEntry_t *pte; 	// pointer to second level page table pte
 	/* Generously assumes 2^24 coremap entries exist. 
 	 * 25th bit allows -1 value for index.
-	 */
+	 */	
+	int prev_allocated:25;
 	int next_allocated:25;
+	int tlb_idx:7;	
 	/* bit fields: can only take values 0 or 1 with 1-bit fields */
 	uint32_t allocated:1;
 	uint32_t dirty:1; 		// needed?
@@ -64,39 +66,50 @@ struct coremap {
 	struct spinlock cm_lock;
 	/* Array of coremap entries */
 	struct coremap_entry *entries;
-	/* Indices needed for FIFO eviction */
-	int last_allocated;
-	int oldest;
 	/* First addr managed by coremap */
 	paddr_t first_mapped_paddr;
-	unsigned num_frames;
+	/* Indices needed for FIFO eviction */
+	int last_allocated:25;
+	int oldest:25;
+
+	unsigned num_frames:25;
 };
 	
-/* Free contiguously allocated frames starting at pa */
-int cm_free_frames(paddr_t pa);
-
-/* Selects best candidate for eviction from memory */
-int select_victim(void);
-
-/* 
- * Uses coremap to evict next victim. Notifies correct pageTableEntry 
- * and sets its swap index to block location on disk. Returns frame 
- * idx for new allocation, or -1 on error. 
- */
-int evict_frame(void);
-
 /* Coremap initialization function */
 void init_coremap(void);
 
 /* Initialization function */
 void vm_bootstrap(void);
 
-/* Fault handling function called by trap code */
-int vm_fault(int faulttype, vaddr_t faultaddress);
+/* Used to get pages for allocation. If kernel allocation, pte
+ * should be NULL. Returns physical address of available frame,
+ * or 0 if no frame is available.
+ */
+paddr_t getppages(pageTableEntry_t *pte, unsigned long npages);
 
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(unsigned npages);
+
 void free_kpages(vaddr_t addr);
+
+/* Free contiguously allocated frames starting at pa */
+int cm_free_frames(paddr_t pa);
+
+/* 
+ * Selects best candidate for eviction. Sets idxptr to frame index to evict,
+ * updates allocation chain to reflect victim selection. Returns -1 if no
+ * suitable victim is found (can happen if memory is full of kernel pages).
+ */
+int select_victim(unsigned *idxptr);
+
+/* 
+ * Uses coremap to evict next victim. Sets pte's value to be the pte whose
+ * frame was evicted. 
+ */
+int evict_frame(pageTableEntry_t **pte, unsigned *swap_idx);
+
+/* Fault handling function called by trap code */
+int vm_fault(int faulttype, vaddr_t faultaddress);
 
 /* TLB shootdown handling called from interprocessor_interrupt */
 void vm_tlbshootdown(const struct tlbshootdown *);

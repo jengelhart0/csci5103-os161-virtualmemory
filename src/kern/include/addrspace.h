@@ -49,7 +49,7 @@ struct vnode;
  */
 
 // We can change this, but it's MAX size is PAGE_SIZE / PAGE_TABLE_ENTRIES = 32 bits
-//typedef __u32 pageTableEntry_t;
+typedef __u32 pageTableEntry_t;
 //{
    //paddr_t physicalAddress // 2^20
    //bool isRead; // 2^1
