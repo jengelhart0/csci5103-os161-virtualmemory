@@ -36,6 +36,10 @@
 #include <current.h>
 #include <syscall.h>
 
+#include <proc.h>
+#include <addrspace.h>
+#include <vm.h>
+
 
 /*
  * System call dispatcher.
@@ -79,7 +83,7 @@ void
 syscall(struct trapframe *tf)
 {
 	int callno;
-	int32_t retval;
+	uint32_t retval;
 	int err;
 
 	KASSERT(curthread != NULL);
@@ -110,6 +114,9 @@ syscall(struct trapframe *tf)
 		break;
 
 	    /* Add stuff here */
+			case SYS_sbrk:
+				err = sys_sbrk(&retval, (__intptr_t)tf->tf_a0);
+
 
 	    default:
 		kprintf("Unknown syscall %d\n", callno);
@@ -158,4 +165,34 @@ void
 enter_forked_process(struct trapframe *tf)
 {
 	(void)tf;
+}
+
+int sys_sbrk(vaddr_t *resultPtr, __intptr_t change)
+{
+	// if not page aligned, error
+	// we aren't implementing this since the man page says we don't have to
+	if (change % PAGE_SIZE != 0)
+		return ENOSYS;
+
+	// lock up and check the addrspace values
+	spinlock_acquire(&curproc->p_lock);
+
+	struct addrspace *as = curproc->p_addrspace;
+	uint32_t temp = as->heapPtr + change;
+
+	// keep out of the text region below the heap
+	if (temp <= as->textTopPtr)
+		return EINVAL;
+
+	// keep out of the stack region above the heap
+	if (temp >= as->stackPtr)
+		return ENOMEM;
+
+	// we are OK - save the old heapPtr and update it
+	*resultPtr = (vaddr_t)PG_ADRS(as->heapPtr);
+	as->heapPtr += change;
+
+	// unlock & return
+	spinlock_release(&curproc->p_lock);
+	return 0;
 }
