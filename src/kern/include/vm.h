@@ -47,9 +47,11 @@
 #define VM_FAULT_READONLY    2    /* A write to a readonly page was attempted*/
 
 struct coremap_entry {
-	// struct pageTableEntry *pte; 	// pointer to second level page table pte
+	struct pageTableEntry_t *pte; 	// pointer to second level page table pte
 	int tlb_idx;
-	/* generously assumes 2^24 coremap entries exist. 25th bit allows -1 value for index. */
+	/* Generously assumes 2^24 coremap entries exist. 
+	 * 25th bit allows -1 value for index.
+	 */
 	int next_allocated:25;
 	/* bit fields: can only take values 0 or 1 with 1-bit fields */
 	uint32_t allocated:1;
@@ -72,6 +74,9 @@ struct coremap {
 	
 /* Free contiguously allocated frames starting at pa */
 int cm_free_frames(paddr_t pa);
+
+/* Selects best candidate for eviction from memory */
+int select_victim(void);
 
 /* 
  * Uses coremap to evict next victim. Notifies correct pageTableEntry 

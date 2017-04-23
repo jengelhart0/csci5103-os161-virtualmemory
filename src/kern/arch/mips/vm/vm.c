@@ -93,10 +93,13 @@ vm_can_sleep(void)
 	}
 }
 
-/* Used to get npages physical pages for kernel allocation */
+/* Used to get npages physical pages for kernel allocation,
+ * or 1 page for non-kernel allocation. If kernel pages, 
+ * pte should be NULL. 
+ */
 static
 paddr_t
-getppages(int kern, unsigned long npages)
+getppages(struct pageTableEntry_t *pte, unsigned long npages)
 {
 	paddr_t addr;
 	/* Before vm_bootstrapped, we are stealing ram. After, coremap manages mem */
@@ -135,18 +138,24 @@ getppages(int kern, unsigned long npages)
 
 		struct coremap_entry *return_entry;
 		return_entry = (cm.entries + entry_idx);
-		for(j = 0; j < npages; j++) {
-			(return_entry + j)->allocated = 1;
-			if(kern) {
-				(return_entry + j)->kern = 1;
-			} else {
-				/* Update allocation order chain */
-				cm.entries[cm.last_allocated].next_allocated = entry_idx;	
-				cm.last_allocated = entry_idx;
+
+		/* Only kernel pages have no pte */
+		if(!pte) {
+			for(j = 0; j < npages; j++) {
+				(return_entry + j)->allocated = 1;
+					(return_entry + j)->kern = 1;
+				if(j < npages - 1) {
+					(return_entry + j)->more_contig_frames = 1;
+				}
 			}
-			if(j < npages - 1) {
-				(return_entry + j)->more_contig_frames = 1;
-			}
+		/* Non-kernel pages are allocated 1 at a time: no need to loop */
+		} else {
+			/* Set entry pte */	
+			return_entry->pte = pte;
+
+			/* Update allocation order chain */
+			cm.entries[cm.last_allocated].next_allocated = entry_idx;	
+			cm.last_allocated = entry_idx;
 		}
 
 		addr = cm.first_mapped_paddr + (entry_idx * PAGE_SIZE);
@@ -169,8 +178,8 @@ alloc_kpages(unsigned npages)
 {
 	paddr_t pa;
 	vm_can_sleep();
-	/* Get npages for kernel (1) */
-	pa = getppages(1, npages);
+	/* Get npages for kernel */
+	pa = getppages(NULL, npages);
 	if (pa==0) {
 		return 0;
 	}
@@ -206,6 +215,7 @@ cm_free_frames(paddr_t pa)
 
 	int more_to_free = 1;
 	while(more_to_free) {
+		to_free->pte = NULL;
 		to_free->tlb_idx = -1;
 		to_free->allocated = 0;
 		to_free->kern = 0;

@@ -41,9 +41,6 @@ int get_free_block(unsigned *idxptr);
 void clear_map_block(unsigned idx);
 
 /* To me, the logic of the following functions should be in the coremap/clean sweeper */
-/* Writes page to disk if dirty and removes from memory */
-//int evict_page();
-
 /* Writes page in memory to swap disk to make clean */
 /*int clean_page(???)*/ 
 
