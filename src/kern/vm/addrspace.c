@@ -66,6 +66,7 @@ as_create(void)
 	 for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
 	 	as->pgDirectoryPtr[dirIdx] = 0;
 
+	//	kprintf("A new addrspace! (%p)\n", as->pgDirectoryPtr);
 	return as;
 }
 
