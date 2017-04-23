@@ -26,6 +26,13 @@ static unsigned vm_bootstrapped = 0;
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
+/* Use coremap to allocate npages of frames */
+paddr_t cm_alloc_frames(unsigned npages)
+{
+	(void)npages;
+	return (paddr_t)0;
+}
+
 void
 vm_bootstrap(void)
 {
