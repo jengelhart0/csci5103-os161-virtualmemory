@@ -167,9 +167,5 @@ int               as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
 
 int load_elf(struct vnode *v, vaddr_t *entrypoint);
 
-/* 
- * Functions added to addrspace.c
- */
-pageTableEntry_t *get_pte_by_vaddr(vaddr_t address);
 
 #endif /* _ADDRSPACE_H_ */
