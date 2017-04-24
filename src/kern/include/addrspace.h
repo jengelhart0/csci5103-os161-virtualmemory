@@ -59,19 +59,27 @@ struct pageTableEntryMap_t {
    uint32_t isUsed:1;
  };
  // masks from /src/kern/arch/mips/include/vm.h
- #define DIR_TBL_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & DIRECTORY_OFFSET)>>22 // first 10 - throw away the last 22
- #define PG_TBL_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & DIRECTORY_PAGE_OFFSET)>>12 // middle 10 - throw away the first 10 & last 12
- #define PG_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & OFFSET_BITS) // last 12 - throw away the first 20
  #define PG_ADRS(pageTableEntry) (paddr_t)((pageTableEntry_t)pageTableEntry & PAGE_FRAME) // first 20 - 0 out the last 12
- #define MAKE_VADDR(dirIdx,pgTblIdx,psyOffset) (vaddr_t)((dirIdx<<22) + (pgTblIdx<<12) + psyOffset) // 10 from dirIdx; 10 from pgTblIdx; 12 phsy ofset
- #define MAKE_PTE_ADDR(dirIdx,pgTblIdx,psyOffset) (pageTableEntry_t *)((dirIdx<<22) + (pgTblIdx<<12) + psyOffset) // 10 from dirIdx; 10 from pgTblIdx; 12 phsy ofset
- #define MAKE_PTE(paddr, otherBits) (pageTableEntry_t)(paddr + otherBits);
  // Can use bits in the middle if we need more flags
  #define IS_READ_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & READ_BIT)
  #define IS_WRITE_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & WRITE_BIT)
  #define IS_EXE_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & EXECUTE_BIT)
  #define IS_ON_DISK(pageTableEntry) ((pageTableEntry_t)pageTableEntry & DISK_BIT)
  #define IS_USED_PAGE(pageTableEntry) ((pageTableEntry_t)pageTableEntry & USED_BIT)
+
+// get pieces from vaddr_t or pageTableEntry_t
+#define DIR_TBL_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & DIRECTORY_OFFSET)>>22 // first 10 - throw away the last 22
+#define PG_TBL_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & DIRECTORY_PAGE_OFFSET)>>12 // middle 10 - throw away the first 10 & last 12
+//#define PG_OFFSET(pageTableEntry) ((pageTableEntry_t)pageTableEntry & OFFSET_BITS) // last 12 - throw away the first 20
+
+ // put pieces back together
+ #define MAKE_PTE_ADDR(dirIdx,pgTblIdx,psyOffset) (pageTableEntry_t *)(((dirIdx)<<22) + ((pgTblIdx)<<12) + psyOffset) // 10 from dirIdx; 10 from pgTblIdx; 12 phsy ofset
+ #define MAKE_VADDR(dirIdx,pgTblIdx,psyOffset)               (vaddr_t)(((dirIdx)<<22) + ((pgTblIdx)<<12) + psyOffset) // 10 from dirIdx; 10 from pgTblIdx; 12 phsy ofset
+
+ // Make a PTE or PG_TBL_ADDR
+ #define MAKE_PG_TBL_ADDR(dirIdx) (pageTableEntry_t *)((dirIdx)<<12) // dirIdx == 0 is unused by load_elf -- use these addresses for the page tables
+ #define MAKE_PTE(paddr, otherBits) (pageTableEntry_t)(paddr + otherBits);
+
 
 struct addrspace {
 #if OPT_DUMBVM
