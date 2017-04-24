@@ -78,7 +78,9 @@ struct pageTableEntryMap_t {
 
  // Make a PTE or PG_TBL_ADDR
  #define MAKE_PG_TBL_ADDR(dirIdx) (pageTableEntry_t *)((dirIdx)<<12) // dirIdx == 0 is unused by load_elf -- use these addresses for the page tables
- #define MAKE_PTE(paddr, otherBits) (pageTableEntry_t)(paddr + otherBits);
+ #define MAKE_PTE(paddr, otherBits) (pageTableEntry_t)(paddr + otherBits)
+ #define PTE_TO_KVADDR(pte) PADDR_TO_KVADDR(PG_ADRS(pte))
+ #define PTE_TO_KPG_TBL(pte) (pageTableEntry_t*)(PTE_TO_KVADDR(pte))
 
 
 struct addrspace {

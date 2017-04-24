@@ -39,6 +39,7 @@
 #include <spinlock.h>
 #include <current.h>
 #include <mips/tlb.h>
+#include <copyinout.h>
 
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
@@ -185,12 +186,13 @@ as_new_directory_frame(struct addrspace *as, vaddr_t vaddr)
 			paddr_t paddr = cm_alloc_frame(MAKE_PG_TBL_ADDR(dirIdx));
 			as->pgDirectoryPtr[dirIdx] = MAKE_PTE(paddr, USED_BIT);
 
-			pageTableEntry_t *pgTblPtr = MAKE_PG_TBL_ADDR(dirIdx);
+			// copy this into every entry of the page
+			pageTableEntry_t *pgTblPtr = PTE_TO_KPG_TBL(as->pgDirectoryPtr[dirIdx]);
 			for (int idx = 0; idx < PAGE_TABLE_ENTRIES; idx++)
 				 pgTblPtr[idx] = 0;
 		}
 
-		return MAKE_PG_TBL_ADDR(dirIdx);
+		return PTE_TO_KPG_TBL(as->pgDirectoryPtr[dirIdx]);
 }
 
 /*
@@ -253,10 +255,10 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 
 static
 void
-as_allocate_page(int dirIdx, int pgIdx)
+as_allocate_page(struct addrspace *as, int dirIdx, int pgIdx)
 {
 		// grab the right page table
-		pageTableEntry_t *pgTblPtr = MAKE_PG_TBL_ADDR(dirIdx);
+		pageTableEntry_t *pgTblPtr = PTE_TO_KPG_TBL(as->pgDirectoryPtr[dirIdx]);
 
 		// mark this page as used (add to existing permissions bytes)
 		pgTblPtr[pgIdx] += USED_BIT;
@@ -283,12 +285,12 @@ as_prepare_load(struct addrspace *as)
 
 		// allocate each frame
 		for (int32_t pgIdx = 0; pgIdx < PAGE_TABLE_ENTRIES; pgIdx++)
-			as_allocate_page(dirIdx, pgIdx);
+			as_allocate_page(as, dirIdx, pgIdx);
 	}
 
 	// allocate each frame - final pgTbl may not use all entries
 	for (int32_t pgIdx = 0; pgIdx <= pgMax; pgIdx++)
-		as_allocate_page(dirMax, pgIdx);
+		as_allocate_page(as, dirMax, pgIdx);
 
  return 0;
 }
@@ -307,21 +309,15 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/* Initial user-level stack pointer */
+	// stack grows down - allocate a page table for it to start.
 	*stackptr = as->stackPtr;
 
-	uint32_t dirIdx = DIR_TBL_OFFSET(*stackptr);
-	uint32_t pgIdx = PG_TBL_OFFSET(*stackptr);
-
-	// stack grows down - allocate a page table for it to start.
-
 	// if this dirTbl entry isn't initialized -- set it
-	if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
-		as->pgDirectoryPtr[dirIdx] = alloc_kpages(1) + USED_BIT;
+	pageTableEntry_t *pgTblPtr = as_new_directory_frame(as, *stackptr);
 
-	pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirIdx, pgIdx, 0);
 	// freak out if this pte is already used
-	if (IS_USED_PAGE(*pgTbl))
+	uint32_t pgIdx = PG_TBL_OFFSET(*stackptr);
+	if (IS_USED_PAGE(pgTblPtr[pgIdx]))
 		return ENOSYS;
 
 	return 0;

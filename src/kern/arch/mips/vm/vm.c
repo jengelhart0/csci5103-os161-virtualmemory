@@ -331,6 +331,7 @@ int evict_frame(pageTableEntry_t **pte, unsigned *swap_idx) {
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
+	kprintf("So we are here somehow");
 	return 0;
 }
 
