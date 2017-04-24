@@ -34,6 +34,13 @@
 #include <vm.h>
 #include <proc.h>
 
+#include <spl.h>
+#include <cpu.h>
+#include <spinlock.h>
+#include <current.h>
+#include <mips/tlb.h>
+#include <copyinout.h>
+
 /*
  * Note! If OPT_DUMBVM is set, as is the case until you start the VM
  * assignment, this file is not compiled or linked or in any way
@@ -51,18 +58,16 @@ as_create(void)
 	}
 
 	// Set the stack (grows down) to be PAGE_TABLE_ENTRIES
-	as->stackDirIdx = PAGE_TABLE_ENTRIES;
-	as->stackTblIdx = PAGE_TABLE_ENTRIES;
-
-	 // Set the heap (grows up) to be -1
-	 as->heapDirIdx = -1;
-	 as->heapTblIdx = -1;
+	as->stackPtr =  USERSTACK;
+	as->textTopPtr = (vaddr_t)MAKE_PG_TBL_ADDR(PAGE_TABLE_ENTRIES-1);
+	as->heapPtr = 0;
 
 	 // set all pageTable pointers to -1
-	 as->pgDirectoryPtr = (pageTableEntry_t**)kmalloc(PAGE_SIZE);
+	 as->pgDirectoryPtr = (pageTableEntry_t *)kmalloc(PAGE_SIZE);
 	 for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
-	 	as->pgDirectoryPtr[dirIdx] = 0; // what permissions do we want here? - none
+	 	as->pgDirectoryPtr[dirIdx] = 0;
 
+	//	kprintf("A new addrspace! (%p)\n", as->pgDirectoryPtr);
 	return as;
 }
 
@@ -76,13 +81,32 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 		return ENOMEM;
 	}
 
-		// what is best a reference to the pointer? or a copy of the array?
+	/* not really sure how to make a deep copy given that I'm using the same vaddr_t
+	newas->pgDirectoryPtr = (pageTableEntry_t *)kmalloc(PAGE_SIZE);
+	for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
+	{
+		if (old->pgDirectoryPtr[dirIdx].isUsed)
+		{
+				new->pgDirectoryPtr[dirIdx].physicalAddress = cm_alloc_frame(vaddr_t);
+				new->pgDirectoryPtr[dirIdx].isUsed = 1;
+				for (int pgIdx = 0; pgIdx < PAGE_TABLE_ENTRIES; pgIdx++)
+				{
+					pageTableEntry_t *pageTablePtr = MAKE_VADDR(dirIdx,pgIdx,0);
+					if (pageTablePtr[pgIdx].isUsed)
+					{
+						// get paddr_t for allocating actual pageTable
+						// save it in the page table entry
+						// memcpy the actual contents of the page from the original location
+					} // check if pageTable entry used
+				} // loop over pageTable entires
+		} // check if directoryTable entry used
+	} // loop over directoryTable entries
+	*/
 	 newas->pgDirectoryPtr = old->pgDirectoryPtr;
 
-	 newas->stackDirIdx = old->stackDirIdx;
-	 newas->stackTblIdx = old->stackTblIdx;
-	 newas->heapDirIdx = old->heapDirIdx;
-	 newas->heapTblIdx = old->heapTblIdx;
+	 newas->stackPtr = old->stackPtr;
+	 newas->textTopPtr = old->textTopPtr;
+	 newas->heapPtr = old->heapPtr;
 
 	*ret = newas;
 	return 0;
@@ -91,33 +115,25 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 void
 as_destroy(struct addrspace *as)
 {
-	// BEWARE -- TODO -- handle case where stack & heap share 1 page
-
-	// TODO -- seems like these loops should be simpler.
-	// Maybe just loop through all possible entries and skip -1 values?
-
-	// Release stack tables (& pages?)
-	for (int stackTblPages = 0; stackTblPages < PAGE_TABLE_ENTRIES; stackTblPages++)
+	for (int32_t dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
 	{
-		//pageTableEntry_t dirTblEntry = (pageTableEntry_t)as->pgDirectoryPtr[stackTblPages];
-		if (!IS_USED_PAGE(as->pgDirectoryPtr[stackTblPages]))
+		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
 			continue;
-		pageTableEntry_t *pgTblAddress = PG_ADRS(as->pgDirectoryPtr[stackTblPages]);
-		for (int stackPages = 0; stackPages < PAGE_TABLE_ENTRIES; stackPages++)
+
+		// release each frame
+		for (int32_t pgIdx = 0; pgIdx < PAGE_TABLE_ENTRIES; pgIdx++)
 		{
-			if (!IS_USED_PAGE(pgTblAddress[stackPages]))
-				continue;
-			// TODO free physical memory
+				pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirIdx, pgIdx, 0);
+				if (!IS_USED_PAGE(*pgTbl))
+					continue;
+
+				cm_free_frames(PG_ADRS(*pgTbl));
 		}
 
-		// free this page of the page table
-		free_kpages(pgTblAddress[0]);
-
-		// TODO add a break when we find unused tables - why waste time cycling empty
+		// release each pageTable
+		pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirIdx, 0, 0);
+		cm_free_frames(PG_ADRS(*pgTbl));
 	}
-
-	// TODO Release heap tables
-	//for (int heapTblPages = as->heapDirIdx; heapTblPages > -1; heapTblPages--)
 
 	// release directory
 	kfree(as->pgDirectoryPtr);
@@ -126,23 +142,26 @@ as_destroy(struct addrspace *as)
 	kfree(as);
 }
 
+/* copied from dumbvm - just clears TLB */
 void
 as_activate(void)
 {
+	int i, spl;
 	struct addrspace *as;
 
 	as = proc_getas();
 	if (as == NULL) {
-		/*
-		 * Kernel thread without an address space; leave the
-		 * prior address space in place.
-		 */
 		return;
 	}
 
-	/*
-	 * Write this.
-	 */
+	/* Disable interrupts on this CPU while frobbing the TLB. */
+	spl = splhigh();
+
+	for (i=0; i<NUM_TLB; i++) {
+		tlb_write(TLBHI_INVALID(i), TLBLO_INVALID(), i);
+	}
+
+	splx(spl);
 }
 
 void
@@ -153,6 +172,27 @@ as_deactivate(void)
 	 * anything. See proc.c for an explanation of why it (might)
 	 * be needed.
 	 */
+}
+
+static
+pageTableEntry_t *
+as_new_directory_frame(struct addrspace *as, vaddr_t vaddr)
+{
+		int32_t dirIdx = DIR_TBL_OFFSET(vaddr);
+
+		// if this dirTbl entry isn't initialized -- set it
+		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
+		{
+			paddr_t paddr = cm_alloc_frame(MAKE_PG_TBL_ADDR(dirIdx));
+			as->pgDirectoryPtr[dirIdx] = MAKE_PTE(paddr, USED_BIT);
+
+			// copy this into every entry of the page
+			pageTableEntry_t *pgTblPtr = PTE_TO_KPG_TBL(as->pgDirectoryPtr[dirIdx]);
+			for (int idx = 0; idx < PAGE_TABLE_ENTRIES; idx++)
+				 pgTblPtr[idx] = 0;
+		}
+
+		return PTE_TO_KPG_TBL(as->pgDirectoryPtr[dirIdx]);
 }
 
 /*
@@ -177,65 +217,89 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
 	size_t npages = memsize / PAGE_SIZE;
 
+	// freak out if this memory is already used for page tables
+	if (vaddr < (vaddr_t)MAKE_PG_TBL_ADDR(PAGE_TABLE_ENTRIES-1))
+		return ENOSYS;
+
 	// create a PTE with permissions set - not used yet
 	pageTableEntry_t pte = 0;
 	if (readable) pte += READ_BIT;
 	if (writeable) pte += WRITE_BIT;
 	if (executable) pte += EXECUTE_BIT;
 
-	// get starting values in our directory & page tables
-	int dirIdx = DIR_TBL_OFFSET(vaddr);
-	int pgTblIdx = (PG_TBL_OFFSET(vaddr)) - 1;
-
 	// heap grows up
 	for (size_t idx = 0; idx < npages; idx++)
 	{
-		pgTblIdx++;
-		// if we've reached the end of the pgTbl, get the next dirTbl entry
-		if (pgTblIdx == PAGE_TABLE_ENTRIES)
-		{
-			pgTblIdx = 0;
-			dirIdx++;
-		}
-
 		// if this dirTbl entry isn't initialized -- set it
-		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
-			*as->pgDirectoryPtr[dirIdx] = alloc_kpages(1) + USED_BIT;
+		pageTableEntry_t *pgTblPtr = as_new_directory_frame(as, vaddr);
+		int32_t pgIdx = PG_TBL_OFFSET(vaddr);
 
-		pageTableEntry_t *pgTbl = PG_ADRS(as->pgDirectoryPtr[dirIdx]);
 		// freak out if this pte is already used
-		if (IS_USED_PAGE(pgTbl[pgTblIdx]))
+		if (IS_USED_PAGE(pgTblPtr[pgIdx]))
 			return ENOSYS;
 
 		// add the permission bits to the pgTbl entry
 		// - even though it doesn't have it's paddr_t part yet
-		pgTbl[pgTblIdx] = pte;
+		pgTblPtr[pgIdx] = pte;
+
+		// and recalc for the next page
+		vaddr += PAGE_SIZE;
 	}
 
-	// this may need to be more complicated
-	// I didn't realize that the vaddr was input and not controlled by addrspace
-	 as->heapDirIdx = dirIdx;
-	 as->heapTblIdx = pgTblIdx;
-
-	return 0;
+	// keep track of where this section ends
+	 int32_t dirIdx = DIR_TBL_OFFSET(vaddr);
+	 int32_t pgIdx = PG_TBL_OFFSET(vaddr);
+	 as->textTopPtr = MAKE_VADDR(dirIdx, pgIdx, 0);
+	 return 0;
 }
 
+static
+void
+as_allocate_page(struct addrspace *as, int dirIdx, int pgIdx)
+{
+		// grab the right page table
+		pageTableEntry_t *pgTblPtr = PTE_TO_KPG_TBL(as->pgDirectoryPtr[dirIdx]);
+
+		// mark this page as used (add to existing permissions bytes)
+		pgTblPtr[pgIdx] += USED_BIT;
+
+		// get virtual page # & save assigned paddr_t
+		pageTableEntry_t *page = MAKE_PTE_ADDR(dirIdx, pgIdx, 0);
+		paddr_t physicalAddress = cm_alloc_frame(page);
+		pgTblPtr[pgIdx] += physicalAddress;
+}
+
+/* assumes text region starts at 0 and grows to textTopPtr */
 int
 as_prepare_load(struct addrspace *as)
 {
-	/*
-	 * Write this.
-	 */
+	// get starting values in our directory & page tables
+	int32_t dirMax = DIR_TBL_OFFSET(as->textTopPtr);
+	int32_t pgMax = PG_TBL_OFFSET(as->textTopPtr);
 
-	(void)as;
-	return 0;
+	// dir 0 reserved for page table allocation - skip it
+	for (int32_t dirIdx = 1; dirIdx < dirMax; dirIdx++)
+	{
+		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
+			continue;
+
+		// allocate each frame
+		for (int32_t pgIdx = 0; pgIdx < PAGE_TABLE_ENTRIES; pgIdx++)
+			as_allocate_page(as, dirIdx, pgIdx);
+	}
+
+	// allocate each frame - final pgTbl may not use all entries
+	for (int32_t pgIdx = 0; pgIdx <= pgMax; pgIdx++)
+		as_allocate_page(as, dirMax, pgIdx);
+
+ return 0;
 }
 
 int
 as_complete_load(struct addrspace *as)
 {
 	/*
-	 * Write this.
+	 * Write this. - not actually sure there is anything to do here
 	 */
 
 	(void)as;
@@ -245,22 +309,15 @@ as_complete_load(struct addrspace *as)
 int
 as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 {
-	/* Initial user-level stack pointer */
-	*stackptr = USERSTACK;
-
-	//*stackptr = MAKE_VADDR(as->stackDirIdx, as->stackTblIdx, 0);
-	as->stackDirIdx = DIR_TBL_OFFSET(*stackptr);
-	as->stackTblIdx = PG_TBL_OFFSET(*stackptr);
-
 	// stack grows down - allocate a page table for it to start.
+	*stackptr = as->stackPtr;
 
 	// if this dirTbl entry isn't initialized -- set it
-	if (!IS_USED_PAGE(as->pgDirectoryPtr[as->stackDirIdx]))
-		*as->pgDirectoryPtr[as->stackDirIdx] = alloc_kpages(1) + USED_BIT;
+	pageTableEntry_t *pgTblPtr = as_new_directory_frame(as, *stackptr);
 
-	pageTableEntry_t *pgTbl = PG_ADRS(as->pgDirectoryPtr[as->stackDirIdx]);
 	// freak out if this pte is already used
-	if (IS_USED_PAGE(pgTbl[as->stackTblIdx]))
+	uint32_t pgIdx = PG_TBL_OFFSET(*stackptr);
+	if (IS_USED_PAGE(pgTblPtr[pgIdx]))
 		return ENOSYS;
 
 	return 0;

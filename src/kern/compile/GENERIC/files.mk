@@ -83,11 +83,8 @@ SRCS+=$(KTOP)/vfs/vfslookup.c
 SRCS+=$(KTOP)/vfs/vfspath.c
 SRCS+=$(KTOP)/vfs/vnode.c
 SRCS+=$(KTOP)/vm/addrspace.c
-<<<<<<< HEAD
-SRCS+=$(KTOP)/vm/genericvm.c
-=======
->>>>>>> feature/pa3
 SRCS+=$(KTOP)/vm/kmalloc.c
+SRCS+=$(KTOP)/vm/swap.c
 SRCS.MACHINE.mips+=$(TOP)/common/gcc-millicode/adddi3.c
 SRCS.MACHINE.mips+=$(TOP)/common/gcc-millicode/anddi3.c
 SRCS.MACHINE.mips+=$(TOP)/common/gcc-millicode/ashldi3.c
@@ -116,10 +113,7 @@ SRCS.MACHINE.mips+=$(KTOP)/arch/mips/thread/switchframe.c
 SRCS.MACHINE.mips+=$(KTOP)/arch/mips/thread/thread_machdep.c
 SRCS.MACHINE.mips+=$(KTOP)/arch/mips/thread/threadstart.S
 SRCS.MACHINE.mips+=$(KTOP)/arch/mips/vm/ram.c
-<<<<<<< HEAD
-=======
 SRCS.MACHINE.mips+=$(KTOP)/arch/mips/vm/vm.c
->>>>>>> feature/pa3
 SRCS.MACHINE.mips+=$(KTOP)/vm/copyinout.c
 SRCS.PLATFORM.sys161+=$(KTOP)/arch/mips/locore/cache-mips161.S
 SRCS.PLATFORM.sys161+=$(KTOP)/arch/mips/locore/exception-mips1.S

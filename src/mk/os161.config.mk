@@ -314,7 +314,7 @@ MACHINE=mips
 
 # Compilation
 DEBUG=-O2
-WARNINGS=-Wall -W -Wwrite-strings -Wmissing-prototypes -Wno-unused-parameter
+WARNINGS=-Wall -W -Wwrite-strings -Wmissing-prototypes -Wno-unused-parameter -Wno-unused-variable
 WERROR=-Werror
 
 #

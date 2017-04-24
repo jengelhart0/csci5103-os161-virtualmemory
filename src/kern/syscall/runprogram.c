@@ -44,6 +44,7 @@
 #include <vfs.h>
 #include <syscall.h>
 #include <test.h>
+#include <uio.h>
 
 /*
  * Load program "progname" and start running it in usermode.
@@ -52,34 +53,64 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, char **args, unsigned long nargs)
 {
-	struct addrspace *as;
-	struct vnode *v;
-	vaddr_t entrypoint, stackptr;
-	int result;
+	int result = 0;
+
+	/* set up a single buffer for argv pointers and contents */
+	int char_count = 0;
+	int eachparam[nargs];
+	for (unsigned long idx = 0; idx < nargs; idx++)
+	{ /* arg + null terminator */
+		eachparam[idx] = strlen(args[idx]) + 1;
+		char_count += eachparam[idx];
+		//kprintf("Args %d = %s - %d\n", (int)idx, args[idx], eachparam[idx]);
+	}
+
+	int argv_offset =  (nargs+1)*sizeof(char*);
+	int actual_size = argv_offset + char_count;
+	int align_size = actual_size % sizeof(char*) == 0 ? 0 :
+		4 - actual_size % sizeof(char*);
+	int total_size = actual_size + align_size;
+	char total[total_size];
+
+	/* add contents but not argv pointers yet */
+	int kargs_offset = argv_offset;
+	for (unsigned long idx = 0; idx < nargs; idx++)
+	{
+			/* copy value */
+			char *argc_ptr = total + kargs_offset;
+			int size = eachparam[idx];
+			memcpy(argc_ptr, args[idx], size);
+			//kprintf("Args %d: %s\n", idx, argc_ptr);
+			kargs_offset += size;
+	}
 
 	/* Open the file. */
+	struct vnode *v;
 	result = vfs_open(progname, O_RDONLY, 0, &v);
 	if (result) {
 		return result;
 	}
 
-	/* We should be a new process. */
-	KASSERT(proc_getas() == NULL);
-
 	/* Create a new address space. */
-	as = as_create();
+	struct addrspace *as  = as_create();
 	if (as == NULL) {
 		vfs_close(v);
 		return ENOMEM;
 	}
 
 	/* Switch to it and activate it. */
-	proc_setas(as);
+	struct addrspace *old_as = proc_setas(as);
 	as_activate();
 
+	/* We should be a new process only when called directly */
+	/* from execv we already have the forked process */
+	if (old_as != NULL)
+		as_destroy(old_as);
+
 	/* Load the executable. */
+	vaddr_t entrypoint;
 	result = load_elf(v, &entrypoint);
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
@@ -91,19 +122,58 @@ runprogram(char *progname)
 	vfs_close(v);
 
 	/* Define the user stack in the address space */
+	vaddr_t stackptr;
 	result = as_define_stack(as, &stackptr);
 	if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
 
+	/* set up argv now that we have the stackptr */
+	char *user_stack = (char *)stackptr - total_size;
+	kargs_offset = argv_offset;
+	for (unsigned long idx = 0; idx <= nargs; idx++)
+	{
+			/* set location in argv */
+			char **argv_ptr = (char**)(total + idx*sizeof(char*));
+
+			/* copy ptr or NULL */
+			char *uargs_ptr = idx == nargs ? NULL : user_stack + kargs_offset;
+			memcpy(argv_ptr, &uargs_ptr, sizeof(char*));
+			//kprintf("Args %d: %p/%p\n", (int)idx, argv_ptr, *argv_ptr);
+
+			/* increment arg pointer value */
+			kargs_offset += eachparam[idx];
+	}
+
+	/* copy that buffer to userspace */
+	struct iovec iov;
+	iov.iov_ubase = (userptr_t)user_stack;
+	iov.iov_len = total_size;
+
+	struct uio u;
+	u.uio_iov = &iov;
+	u.uio_iovcnt = 1;
+	u.uio_offset = 0;
+	u.uio_resid = actual_size;
+	u.uio_segflg = UIO_USERSPACE;
+	u.uio_rw = UIO_READ;
+	u.uio_space = as;
+
+	//kprintf("-> uiomove params size (%d/%d) from %p to %p\n",
+	//	actual_size, total_size, total, user_stack);
+	result = uiomove(total, actual_size, &u);
+	if (result)
+		return result;
+
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(nargs /*argc*/,
+				(userptr_t)user_stack /*userptr_t-userspace addr of argv*/,
 			  NULL /*userspace addr of environment*/,
-			  stackptr, entrypoint);
+			  (vaddr_t)(stackptr - total_size), //stackptr
+				entrypoint);
 
 	/* enter_new_process does not return. */
 	panic("enter_new_process returned\n");
 	return EINVAL;
 }
-
