@@ -49,17 +49,17 @@
 
 struct coremap_entry {
 	pageTableEntry_t *pte; 	// pointer to second level page table pte
-	/* Generously assumes 2^24 coremap entries exist. 
+	/* Generously assumes 2^24 coremap entries exist.
 	 * 25th bit allows -1 value for index.
-	 */	
+	 */
 	int prev_allocated:25;
 	int next_allocated:25;
-	int tlb_idx:7;	
+	int tlb_idx:7;
 	/* bit fields: can only take values 0 or 1 with 1-bit fields */
 	uint32_t allocated:1;
 	uint32_t dirty:1; 		// needed?
 	uint32_t more_contig_frames:1;  // 1 if contig-alloc'ed frames remain
-	uint32_t kern:1; 
+	uint32_t kern:1;
 };
 
 struct coremap {
@@ -74,7 +74,7 @@ struct coremap {
 
 	unsigned num_frames:25;
 };
-	
+
 /* Coremap initialization function */
 void init_coremap(void);
 
@@ -87,6 +87,9 @@ void vm_bootstrap(void);
  */
 paddr_t getppages(pageTableEntry_t *pte, unsigned long npages);
 
+/* wrapper for single page allocation by non-kernel functions */
+paddr_t cm_alloc_frame(pageTableEntry_t *pte);
+
 /* Allocate/free kernel heap pages (called by kmalloc/kfree) */
 vaddr_t alloc_kpages(unsigned npages);
 
@@ -95,16 +98,16 @@ void free_kpages(vaddr_t addr);
 /* Free contiguously allocated frames starting at pa */
 int cm_free_frames(paddr_t pa);
 
-/* 
+/*
  * Selects best candidate for eviction. Sets idxptr to frame index to evict,
  * updates allocation chain to reflect victim selection. Returns -1 if no
  * suitable victim is found (can happen if memory is full of kernel pages).
  */
 int select_victim(unsigned *idxptr);
 
-/* 
+/*
  * Uses coremap to evict next victim. Sets pte's value to be the pte whose
- * frame was evicted. 
+ * frame was evicted.
  */
 int evict_frame(pageTableEntry_t **pte, unsigned *swap_idx);
 

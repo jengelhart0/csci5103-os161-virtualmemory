@@ -30,7 +30,7 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 void init_coremap(void) {
 
 	spinlock_init(&cm.cm_lock);
-	
+
 	cm.last_allocated = -1;
 	cm.oldest = -1;
 
@@ -68,7 +68,7 @@ void init_coremap(void) {
 void
 vm_bootstrap(void)
 {
-	init_swapdisk();	
+	init_swapdisk();
 	init_coremap();
 	vm_bootstrapped = 1;
 }
@@ -94,8 +94,8 @@ vm_can_sleep(void)
 }
 
 /* Used to get npages physical pages for kernel allocation,
- * or 1 page for non-kernel allocation. If kernel pages, 
- * pte should be NULL. 
+ * or 1 page for non-kernel allocation. If kernel pages,
+ * pte should be NULL.
  */
 paddr_t
 getppages(pageTableEntry_t *pte, unsigned long npages)
@@ -144,7 +144,7 @@ getppages(pageTableEntry_t *pte, unsigned long npages)
 			}
 		/* Non-kernel pages are allocated 1 at a time: no need to loop */
 		} else {
-			/* Set entry pte */	
+			/* Set entry pte */
 			return_entry->pte = pte;
 
 			/* Update allocation order chain */
@@ -169,6 +169,12 @@ getppages(pageTableEntry_t *pte, unsigned long npages)
 		spinlock_release(&stealmem_lock);
 	}
 	return addr;
+}
+
+/* wrapper to assume 1 page */
+paddr_t cm_alloc_frame(pageTableEntry_t *pte)
+{
+	return getppages(pte, 1);
 }
 
 /* Allocate/free some kernel-space virtual pages */
@@ -218,18 +224,18 @@ cm_free_frames(paddr_t pa)
 		to_free->pte = NULL;
 		to_free->tlb_idx = -1;
 		to_free->allocated = 0;
-			
+
 		/* Manage allocation chain (only applicable to non-kernel frames) */
-		if(!to_free->kern) {	
-	
+		if(!to_free->kern) {
+
 			/* If an entry was allocated before to_free, set its
 			 * next_allocated to be to_free's next_allocated
-		  	 */	
+		  	 */
 			if(to_free->prev_allocated >= 0) {
 				/* Shouldn't be oldest if has prev_allocated */
 				KASSERT(cm.oldest != (int) cm_idx);
 				(cm.entries + (to_free->prev_allocated))
-					->next_allocated 
+					->next_allocated
 					= to_free->next_allocated;
 			} else {
 				/* Should be oldest if no prev_allocated */
@@ -249,14 +255,14 @@ cm_free_frames(paddr_t pa)
 				/* Should be last_allocated if no next allocated */
 				KASSERT(cm.last_allocated == (int) cm_idx);
 				cm.last_allocated = to_free->prev_allocated;
-			}	
-				
+			}
+
 			/* Remove to_free from allocation chain */
 			to_free->prev_allocated = -1;
 			to_free->next_allocated = -1;
 
 		}
-	
+
 		to_free->kern = 0;
 
 		more_to_free = to_free->more_contig_frames;
@@ -298,20 +304,20 @@ int select_victim(unsigned *idxptr) {
 
 int evict_frame(pageTableEntry_t **pte, unsigned *swap_idx) {
 	int result;
-	unsigned frame_idx;	
-	
+	unsigned frame_idx;
+
 	result = select_victim(&frame_idx);
 	if(result) {
 		return result;
 	}
-	
+
 	*pte = (cm.entries + frame_idx)->pte;
 
 	/* first_mapped_paddr won't be changing at this point: lock unnecessary */
 	paddr_t pa;
 	pa = frame_idx * PAGE_SIZE + cm.first_mapped_paddr;
-		
-	result = swap_out(pa, swap_idx);	
+
+	result = swap_out(pa, swap_idx);
 
 	if(result) {
 		/* Because failure, NULL out *pte */
