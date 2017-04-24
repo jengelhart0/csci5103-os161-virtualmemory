@@ -31,7 +31,7 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 void init_coremap(void) {
 
 	spinlock_init(&cm.cm_lock);
-	
+
 	cm.last_allocated = -1;
 	cm.oldest = -1;
 
@@ -68,7 +68,7 @@ void init_coremap(void) {
 void
 vm_bootstrap(void)
 {
-	init_swapdisk();	
+	init_swapdisk();
 	init_coremap();
 	vm_bootstrapped = 1;
 }
@@ -94,12 +94,12 @@ vm_can_sleep(void)
 }
 
 /* Used to get npages physical pages for kernel allocation,
- * or 1 page for non-kernel allocation. If kernel pages, 
- * pte should be NULL. 
+ * or 1 page for non-kernel allocation. If kernel pages,
+ * pte should be NULL.
  */
 static
 paddr_t
-getppages(struct pageTableEntry_t *pte, unsigned long npages)
+getppages(pageTableEntry_t *pte, unsigned long npages)
 {
 	paddr_t addr;
 	/* Before vm_bootstrapped, we are stealing ram. After, coremap manages mem */
@@ -129,7 +129,7 @@ getppages(struct pageTableEntry_t *pte, unsigned long npages)
 		if(!entry_found) {
 	// UNCOMMENT ONCE evict_frame() written
 	//		entry_idx = evict_frame();
-	//		if(entry_idx == -1) {	
+	//		if(entry_idx == -1) {
 				kprintf("No memory available!\n");
 				spinlock_release(&cm.cm_lock);
 				return 0;
@@ -150,11 +150,11 @@ getppages(struct pageTableEntry_t *pte, unsigned long npages)
 			}
 		/* Non-kernel pages are allocated 1 at a time: no need to loop */
 		} else {
-			/* Set entry pte */	
+			/* Set entry pte */
 			return_entry->pte = pte;
 
 			/* Update allocation order chain */
-			cm.entries[cm.last_allocated].next_allocated = entry_idx;	
+			cm.entries[cm.last_allocated].next_allocated = entry_idx;
 			cm.last_allocated = entry_idx;
 		}
 
@@ -170,6 +170,11 @@ getppages(struct pageTableEntry_t *pte, unsigned long npages)
 		spinlock_release(&stealmem_lock);
 	}
 	return addr;
+}
+
+paddr_t cm_alloc_frame(pageTableEntry_t *pte)
+{
+	return getppages(pte, 1);
 }
 
 /* Allocate/free some kernel-space virtual pages */
@@ -221,7 +226,7 @@ cm_free_frames(paddr_t pa)
 		to_free->kern = 0;
 		more_to_free = to_free->more_contig_frames;
 		to_free->more_contig_frames = 0;
-		
+
 		/*
 		 * NOTE: leave next_allocated as is: we need ghosts to remain
 		 * until they are discovered as unallocated so we don't break

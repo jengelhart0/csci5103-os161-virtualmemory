@@ -58,7 +58,7 @@ as_create(void)
 
 	// Set the stack (grows down) to be PAGE_TABLE_ENTRIES
 	as->stackPtr =  USERSTACK;
-	as->textTopPtr = 0;
+	as->textTopPtr = (vaddr_t)MAKE_PG_TBL_ADDR(PAGE_TABLE_ENTRIES-1);
 	as->heapPtr = 0;
 
 	 // set all pageTable pointers to -1
@@ -81,16 +81,16 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	}
 
 	/* not really sure how to make a deep copy given that I'm using the same vaddr_t
-	newas->pgDirectoryPtr = (struct pageTableEntry_t *)kmalloc(PAGE_SIZE);
+	newas->pgDirectoryPtr = (pageTableEntry_t *)kmalloc(PAGE_SIZE);
 	for (int dirIdx = 0; dirIdx < PAGE_TABLE_ENTRIES; dirIdx++)
 	{
 		if (old->pgDirectoryPtr[dirIdx].isUsed)
 		{
-				new->pgDirectoryPtr[dirIdx].physicalAddress = cm_alloc_frames(1);
+				new->pgDirectoryPtr[dirIdx].physicalAddress = cm_alloc_frame(vaddr_t);
 				new->pgDirectoryPtr[dirIdx].isUsed = 1;
 				for (int pgIdx = 0; pgIdx < PAGE_TABLE_ENTRIES; pgIdx++)
 				{
-					struct pageTableEntry_t *pageTablePtr = MAKE_VADDR(dirIdx,pgIdx,0);
+					pageTableEntry_t *pageTablePtr = MAKE_VADDR(dirIdx,pgIdx,0);
 					if (pageTablePtr[pgIdx].isUsed)
 					{
 						// get paddr_t for allocating actual pageTable
@@ -173,6 +173,26 @@ as_deactivate(void)
 	 */
 }
 
+static
+pageTableEntry_t *
+as_new_directory_frame(struct addrspace *as, vaddr_t vaddr)
+{
+		int32_t dirIdx = DIR_TBL_OFFSET(vaddr);
+
+		// if this dirTbl entry isn't initialized -- set it
+		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
+		{
+			paddr_t paddr = cm_alloc_frame(MAKE_PG_TBL_ADDR(dirIdx));
+			as->pgDirectoryPtr[dirIdx] = MAKE_PTE(paddr, USED_BIT);
+
+			pageTableEntry_t *pgTblPtr = MAKE_PG_TBL_ADDR(dirIdx);
+			for (int idx = 0; idx < PAGE_TABLE_ENTRIES; idx++)
+				 pgTblPtr[idx] = 0;
+		}
+
+		return MAKE_PG_TBL_ADDR(dirIdx);
+}
+
 /*
  * Set up a segment at virtual address VADDR of size MEMSIZE. The
  * segment in memory extends from VADDR up to (but not including)
@@ -195,43 +215,56 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t memsize,
 	memsize = (memsize + PAGE_SIZE - 1) & PAGE_FRAME;
 	size_t npages = memsize / PAGE_SIZE;
 
+	// freak out if this memory is already used for page tables
+	if (vaddr < (vaddr_t)MAKE_PG_TBL_ADDR(PAGE_TABLE_ENTRIES-1))
+		return ENOSYS;
+
 	// create a PTE with permissions set - not used yet
 	pageTableEntry_t pte = 0;
 	if (readable) pte += READ_BIT;
 	if (writeable) pte += WRITE_BIT;
 	if (executable) pte += EXECUTE_BIT;
 
-	// get starting values in our directory & page tables
-	int32_t dirIdx = DIR_TBL_OFFSET(vaddr);
-	int32_t pgIdx = PG_TBL_OFFSET(vaddr);
-
 	// heap grows up
 	for (size_t idx = 0; idx < npages; idx++)
 	{
-		// if we've reached the end of the pgTbl, get the next dirTbl entry
-		if (pgIdx == PAGE_TABLE_ENTRIES)
-		{
-			pgIdx = 0;
-			dirIdx++;
-		}
-
 		// if this dirTbl entry isn't initialized -- set it
-		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
-			as->pgDirectoryPtr[dirIdx] = cm_alloc_frames(1) + USED_BIT;
+		pageTableEntry_t *pgTblPtr = as_new_directory_frame(as, vaddr);
+		int32_t pgIdx = PG_TBL_OFFSET(vaddr);
 
-		pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirIdx, pgIdx, 0);
 		// freak out if this pte is already used
-		if (IS_USED_PAGE(*pgTbl))
+		if (IS_USED_PAGE(pgTblPtr[pgIdx]))
 			return ENOSYS;
 
 		// add the permission bits to the pgTbl entry
 		// - even though it doesn't have it's paddr_t part yet
-		*pgTbl = pte;
-		pgIdx++;
+		pgTblPtr[pgIdx] = pte;
+
+		// and recalc for the next page
+		vaddr += PAGE_SIZE;
 	}
 
+	// keep track of where this section ends
+	 int32_t dirIdx = DIR_TBL_OFFSET(vaddr);
+	 int32_t pgIdx = PG_TBL_OFFSET(vaddr);
 	 as->textTopPtr = MAKE_VADDR(dirIdx, pgIdx, 0);
 	 return 0;
+}
+
+static
+void
+as_allocate_page(int dirIdx, int pgIdx)
+{
+		// grab the right page table
+		pageTableEntry_t *pgTblPtr = MAKE_PG_TBL_ADDR(dirIdx);
+
+		// mark this page as used (add to existing permissions bytes)
+		pgTblPtr[pgIdx] += USED_BIT;
+
+		// get virtual page # & save assigned paddr_t
+		pageTableEntry_t *page = MAKE_PTE_ADDR(dirIdx, pgIdx, 0);
+		paddr_t physicalAddress = cm_alloc_frame(page);
+		pgTblPtr[pgIdx] += physicalAddress;
 }
 
 /* assumes text region starts at 0 and grows to textTopPtr */
@@ -242,25 +275,20 @@ as_prepare_load(struct addrspace *as)
 	int32_t dirMax = DIR_TBL_OFFSET(as->textTopPtr);
 	int32_t pgMax = PG_TBL_OFFSET(as->textTopPtr);
 
-	for (int32_t dirIdx = 0; dirIdx < dirMax; dirIdx++)
+	// dir 0 reserved for page table allocation - skip it
+	for (int32_t dirIdx = 1; dirIdx < dirMax; dirIdx++)
 	{
 		if (!IS_USED_PAGE(as->pgDirectoryPtr[dirIdx]))
 			continue;
 
 		// allocate each frame
 		for (int32_t pgIdx = 0; pgIdx < PAGE_TABLE_ENTRIES; pgIdx++)
-		{
-				pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirIdx, pgIdx, 0);
-				*pgTbl = cm_alloc_frames(1) + USED_BIT;
-		}
+			as_allocate_page(dirIdx, pgIdx);
 	}
 
-	// allocate each frame - final directory entry
+	// allocate each frame - final pgTbl may not use all entries
 	for (int32_t pgIdx = 0; pgIdx <= pgMax; pgIdx++)
-	{
-			pageTableEntry_t *pgTbl = MAKE_PTE_ADDR(dirMax, pgIdx, 0);
-			*pgTbl = cm_alloc_frames(1) + USED_BIT;
-	}
+		as_allocate_page(dirMax, pgIdx);
 
  return 0;
 }

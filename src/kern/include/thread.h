@@ -64,6 +64,17 @@ typedef enum {
 	S_ZOMBIE,	/* zombie; exited but not yet deleted */
 } threadstate_t;
 
+#define MAX_NAME_STORED	256
+struct dumbStatusItem {
+	bool used;
+	char name[MAX_NAME_STORED];
+	bool finished;
+	int status;
+};
+
+#define DUMB_MAX_PROCESSES	512
+struct dumbStatusItem processStatusList[DUMB_MAX_PROCESSES];
+
 /* Thread structure. */
 struct thread {
 	/*
@@ -167,6 +178,10 @@ void schedule(void);
  * timer interrupt.
  */
 void thread_consider_migration(void);
+
+void addToStatusList(const char *name);
+void saveStatus(const char *name, int status);
+int waitOnStatus(const char *name);
 
 
 #endif /* _THREAD_H_ */

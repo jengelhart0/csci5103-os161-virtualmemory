@@ -105,23 +105,27 @@ syscall(struct trapframe *tf)
 
 	switch (callno) {
 	    case SYS_reboot:
-		err = sys_reboot(tf->tf_a0);
-		break;
+				err = sys_reboot(tf->tf_a0);
+				break;
 
 	    case SYS___time:
-		err = sys___time((userptr_t)tf->tf_a0,
-				 (userptr_t)tf->tf_a1);
-		break;
+				err = sys___time((userptr_t)tf->tf_a0,
+						 (userptr_t)tf->tf_a1);
+				break;
 
 	    /* Add stuff here */
+			case SYS__exit:
+				sys__exit(tf->tf_a0);
+				break;
 			case SYS_sbrk:
 				err = sys_sbrk(&retval, (__intptr_t)tf->tf_a0);
+				break;
 
 
 	    default:
-		kprintf("Unknown syscall %d\n", callno);
-		err = ENOSYS;
-		break;
+				kprintf("Unknown syscall %d\n", callno);
+				err = ENOSYS;
+				break;
 	}
 
 
@@ -195,4 +199,9 @@ int sys_sbrk(vaddr_t *resultPtr, __intptr_t change)
 	// unlock & return
 	spinlock_release(&curproc->p_lock);
 	return 0;
+}
+
+void sys__exit(int status)
+{
+	saveStatus(curthread->t_name, status);
 }

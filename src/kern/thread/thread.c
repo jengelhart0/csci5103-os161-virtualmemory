@@ -147,6 +147,7 @@ thread_create(const char *name)
 	thread->t_iplhigh_count = 1; /* corresponding to t_curspl */
 
 	/* If you add to struct thread, be sure to initialize here */
+	addToStatusList(name);
 
 	return thread;
 }
@@ -387,6 +388,12 @@ thread_bootstrap(void)
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_proc != NULL);
 	KASSERT(curthread->t_proc == kproc);
+
+	/* empty the list of threads */
+	for (int idx = 0; idx < DUMB_MAX_PROCESSES; idx++)
+	{
+		processStatusList[idx].used = false;
+	}
 
 	/* Done */
 }
@@ -1206,4 +1213,79 @@ interprocessor_interrupt(void)
 
 	curcpu->c_ipi_pending = 0;
 	spinlock_release(&curcpu->c_ipi_lock);
+}
+
+void addToStatusList(const char *name)
+{
+		KASSERT(strlen(name) < MAX_NAME_STORED);
+
+		for (int idx = 0; idx < DUMB_MAX_PROCESSES; idx++)
+		{
+			if (processStatusList[idx].used)
+				continue;
+
+			// we should get a lock on the list here
+			if (!processStatusList[idx].used)
+			{
+				processStatusList[idx].used = true;
+				processStatusList[idx].finished = false;
+				strcpy(processStatusList[idx].name, name);
+				kprintf("Index %d found for %s\n", idx, name);
+				return;
+			}
+			// we should release the lock here
+		}
+
+		KASSERT(false);
+}
+
+void saveStatus(const char *name, int status)
+{
+		KASSERT(strlen(name) < MAX_NAME_STORED);
+
+	for (int idx = 0; idx < DUMB_MAX_PROCESSES; idx++)
+	{
+		// find the matching name in the list
+		if (processStatusList[idx].used &&
+			strcmp(name, processStatusList[idx].name) == 0)
+		{
+			kprintf("Index %d found for %s - %d\n", idx, name, status);
+			// set status before finished in case something is waiting for it
+			processStatusList[idx].status = status;
+			processStatusList[idx].finished = true;
+			return;
+		}
+	}
+
+	// this name isn't in our list. weird.
+	KASSERT(false);
+}
+
+int waitOnStatus(const char *name)
+{
+		KASSERT(strlen(name) < MAX_NAME_STORED);
+
+	for (int idx = 0; idx < DUMB_MAX_PROCESSES; idx++)
+	{
+		// find the matching name in the list
+		if (processStatusList[idx].used &&
+			strcmp(name, processStatusList[idx].name) == 0)
+		{
+			kprintf("Index %d found for %s - ?\n", idx, name);
+			// busy wait until it is done.
+			while (!processStatusList[idx].finished);
+
+			// save the status and free the list space
+			int temp = processStatusList[idx].status;
+			kprintf("Status %d found for %s\n", temp, name);
+			processStatusList[idx].used = false;
+
+			// return the status
+			return temp;
+		}
+	}
+
+	// this name isn't in our list. weird.
+	KASSERT(false);
+	return -1;
 }
