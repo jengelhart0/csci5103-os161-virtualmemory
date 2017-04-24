@@ -19,7 +19,6 @@
 /* (this must be > 64K so argument blocks of size ARG_MAX will fit) */
 #define DUMBVM_STACKPAGES    18
 
-
 static struct coremap cm;
 static unsigned vm_bootstrapped = 0;
 
@@ -31,7 +30,7 @@ static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 void init_coremap(void) {
 
 	spinlock_init(&cm.cm_lock);
-
+	
 	cm.last_allocated = -1;
 	cm.oldest = -1;
 
@@ -58,6 +57,7 @@ void init_coremap(void) {
 	for(i = 0; i < cm.num_frames; i++) {
 		//(coremap.entries + i)->pte = NULL;
 		(cm.entries + i)->tlb_idx = -1;
+		(cm.entries + i)->prev_allocated = -1;
 		(cm.entries + i)->next_allocated = -1;
 		(cm.entries + i)->allocated = 0;
 		(cm.entries + i)->dirty = 0;
@@ -68,7 +68,7 @@ void init_coremap(void) {
 void
 vm_bootstrap(void)
 {
-	init_swapdisk();
+	init_swapdisk();	
 	init_coremap();
 	vm_bootstrapped = 1;
 }
@@ -94,10 +94,9 @@ vm_can_sleep(void)
 }
 
 /* Used to get npages physical pages for kernel allocation,
- * or 1 page for non-kernel allocation. If kernel pages,
- * pte should be NULL.
+ * or 1 page for non-kernel allocation. If kernel pages, 
+ * pte should be NULL. 
  */
-static
 paddr_t
 getppages(pageTableEntry_t *pte, unsigned long npages)
 {
@@ -125,15 +124,10 @@ getppages(pageTableEntry_t *pte, unsigned long npages)
 				}
 			}
 		}
-		/* If no free frames, begin eviction routines */
+		/* No free frames found */
 		if(!entry_found) {
-	// UNCOMMENT ONCE evict_frame() written
-	//		entry_idx = evict_frame();
-	//		if(entry_idx == -1) {
-				kprintf("No memory available!\n");
-				spinlock_release(&cm.cm_lock);
-				return 0;
-	//		}
+			spinlock_release(&cm.cm_lock);
+			return 0;
 		}
 
 		struct coremap_entry *return_entry;
@@ -150,11 +144,16 @@ getppages(pageTableEntry_t *pte, unsigned long npages)
 			}
 		/* Non-kernel pages are allocated 1 at a time: no need to loop */
 		} else {
-			/* Set entry pte */
+			/* Set entry pte */	
 			return_entry->pte = pte;
 
 			/* Update allocation order chain */
 			cm.entries[cm.last_allocated].next_allocated = entry_idx;
+			if(cm.oldest < 0) {
+				cm.oldest = entry_idx;
+			}
+			return_entry->prev_allocated = cm.last_allocated;
+			return_entry->next_allocated = -1;
 			cm.last_allocated = entry_idx;
 		}
 
@@ -170,11 +169,6 @@ getppages(pageTableEntry_t *pte, unsigned long npages)
 		spinlock_release(&stealmem_lock);
 	}
 	return addr;
-}
-
-paddr_t cm_alloc_frame(pageTableEntry_t *pte)
-{
-	return getppages(pte, 1);
 }
 
 /* Allocate/free some kernel-space virtual pages */
@@ -216,40 +210,126 @@ cm_free_frames(paddr_t pa)
 	spinlock_acquire(&cm.cm_lock);
 
 	struct coremap_entry *to_free;
-	to_free = (cm.entries + cm_idx);
-
 	int more_to_free = 1;
+
 	while(more_to_free) {
+		to_free = (cm.entries + cm_idx);
+
 		to_free->pte = NULL;
 		to_free->tlb_idx = -1;
 		to_free->allocated = 0;
+			
+		/* Manage allocation chain (only applicable to non-kernel frames) */
+		if(!to_free->kern) {	
+	
+			/* If an entry was allocated before to_free, set its
+			 * next_allocated to be to_free's next_allocated
+		  	 */	
+			if(to_free->prev_allocated >= 0) {
+				/* Shouldn't be oldest if has prev_allocated */
+				KASSERT(cm.oldest != (int) cm_idx);
+				(cm.entries + (to_free->prev_allocated))
+					->next_allocated 
+					= to_free->next_allocated;
+			} else {
+				/* Should be oldest if no prev_allocated */
+				KASSERT(cm.oldest == (int) cm_idx);
+				cm.oldest = to_free->next_allocated;
+			}
+			/* If an entry was allocated after to_free, set its
+			 * prev_allocated to be to_free's prev_allocated
+			 */
+			if(to_free->next_allocated >= 0) {
+				/* Shouldn't be last_allocated if next allocated */
+				KASSERT(cm.last_allocated != (int) cm_idx);
+				(cm.entries + (to_free->next_allocated))
+					->prev_allocated
+					= to_free->prev_allocated;
+			} else {
+				/* Should be last_allocated if no next allocated */
+				KASSERT(cm.last_allocated == (int) cm_idx);
+				cm.last_allocated = to_free->prev_allocated;
+			}	
+				
+			/* Remove to_free from allocation chain */
+			to_free->prev_allocated = -1;
+			to_free->next_allocated = -1;
+
+		}
+	
 		to_free->kern = 0;
+
 		more_to_free = to_free->more_contig_frames;
 		to_free->more_contig_frames = 0;
 
-		/*
-		 * NOTE: leave next_allocated as is: we need ghosts to remain
-		 * until they are discovered as unallocated so we don't break
-		 * the allocation order chain
-		 */
-
-		to_free = to_free + 1;
+		cm_idx++;
 	}
 
 	spinlock_release(&cm.cm_lock);
 
 	return 0;
-
 }
 
-void
-vm_tlbshootdown(const struct tlbshootdown *ts)
-{
-	panic("dumbvm tried to do tlb shootdown?!\n");
+int select_victim(unsigned *idxptr) {
+
+	spinlock_acquire(&cm.cm_lock);
+
+	if(cm.oldest < 0) {
+		spinlock_release(&cm.cm_lock);
+		kprintf("No suitable eviction victim: either get_victim called when free frames existed or memory is full of kernel pages.\n");
+		return -1;
+	}
+
+	*idxptr = cm.oldest;
+	/* Case when only one is allocated (the rest could be kernel allocs) */
+	if(cm.oldest == cm.last_allocated) {
+		cm.last_allocated = -1;
+	}
+	/* Update the the oldest allocated tracker */
+	cm.oldest = (cm.entries + cm.oldest)->next_allocated;
+	/* If there is a new oldest, make sure none are shown prev_allocated */
+	if(cm.oldest >= 0) {
+		(cm.entries + cm.oldest)->prev_allocated = -1;
+	}
+
+	spinlock_release(&cm.cm_lock);
+	return 0;
+}
+
+int evict_frame(pageTableEntry_t **pte, unsigned *swap_idx) {
+	int result;
+	unsigned frame_idx;	
+	
+	result = select_victim(&frame_idx);
+	if(result) {
+		return result;
+	}
+	
+	*pte = (cm.entries + frame_idx)->pte;
+
+	/* first_mapped_paddr won't be changing at this point: lock unnecessary */
+	paddr_t pa;
+	pa = frame_idx * PAGE_SIZE + cm.first_mapped_paddr;
+		
+	result = swap_out(pa, swap_idx);	
+
+	if(result) {
+		/* Because failure, NULL out *pte */
+		*pte = 0;
+		return result;
+	}
+
+	return 0;
 }
 
 int
 vm_fault(int faulttype, vaddr_t faultaddress)
 {
 	return 0;
+}
+
+void
+vm_tlbshootdown(const struct tlbshootdown *ts)
+{
+	panic("dumbvm tried to do tlb shootdown?!\n");
 }
